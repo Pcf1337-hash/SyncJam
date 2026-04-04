@@ -36,7 +36,7 @@ SyncJam ist eine Android-App, mit der zwei oder mehr Personen gleichzeitig Musik
 
 ### APK direkt installieren (Android 8.0+)
 
-1. Lade `SyncJam-v1.1.0.apk` aus dem [Release](../../releases/latest) herunter
+1. Lade `SyncJam-v1.2.0.apk` aus dem [Release](../../releases/latest) herunter
 2. Aktiviere "Unbekannte Quellen" auf deinem Gerät
 3. Installiere die APK
 4. Server läuft bereits — einfach starten!
