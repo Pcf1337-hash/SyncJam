@@ -402,12 +402,14 @@ private fun PlayerBottomBar(
 ) {
     val focusManager = LocalFocusManager.current
     var textInput by remember { mutableStateOf("") }
+    var showTextInput by remember { mutableStateOf(false) }
     val submitText = {
         val trimmed = textInput.trim()
         if (trimmed.isNotBlank()) {
             onReaction(trimmed)
             textInput = ""
             focusManager.clearFocus()
+            showTextInput = false
         }
     }
 
@@ -419,34 +421,38 @@ private fun PlayerBottomBar(
             .navigationBarsPadding()
             .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            // Text reaction input
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = textInput,
-                    onValueChange = { if (it.length <= 100) textInput = it },
-                    placeholder = { Text("Text senden…", style = MaterialTheme.typography.bodySmall) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(52.dp),
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { submitText() }),
-                    shape = RoundedCornerShape(24.dp)
-                )
-                FilledTonalIconButton(
-                    onClick = submitText,
-                    modifier = Modifier.size(52.dp),
-                    enabled = textInput.isNotBlank()
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.Send, "Senden", Modifier.size(20.dp))
+            // Text reaction input — shown only when toggled
+            AnimatedVisibility(visible = showTextInput) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = textInput,
+                            onValueChange = { if (it.length <= 100) textInput = it },
+                            placeholder = { Text("Text senden…", style = MaterialTheme.typography.bodySmall) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = { submitText() }),
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        FilledTonalIconButton(
+                            onClick = submitText,
+                            modifier = Modifier.size(52.dp),
+                            enabled = textInput.isNotBlank()
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, "Senden", Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
                 }
             }
-            Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.Center,
@@ -463,7 +469,25 @@ private fun PlayerBottomBar(
                             Text(emoji, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    if (emoji != "🎸") Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(4.dp))
+                }
+                // Toggle text input button
+                Surface(
+                    onClick = {
+                        showTextInput = !showTextInput
+                        if (!showTextInput) {
+                            textInput = ""
+                            focusManager.clearFocus()
+                        }
+                    },
+                    shape = CircleShape,
+                    color = if (showTextInput) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Text("Aa", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
             Spacer(Modifier.height(10.dp))

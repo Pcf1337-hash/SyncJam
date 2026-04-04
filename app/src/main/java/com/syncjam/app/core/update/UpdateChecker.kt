@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -23,7 +24,7 @@ import java.io.InputStream
 import java.net.URL
 
 private const val GITHUB_REPO = "Pcf1337-hash/SyncJam"
-const val APP_VERSION = "1.0.0"
+const val APP_VERSION = "1.2.0"
 
 @Serializable
 data class AppRelease(
@@ -106,6 +107,17 @@ suspend fun downloadApk(
 }
 
 fun installApk(context: Context, apkFile: File) {
+    // Android 8+: check install-from-unknown-sources permission first
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        !context.packageManager.canRequestPackageInstalls()
+    ) {
+        val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+            data = Uri.parse("package:${context.packageName}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(settingsIntent)
+        return
+    }
     val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
         FileProvider.getUriForFile(context, "${context.packageName}.provider", apkFile)
     } else {

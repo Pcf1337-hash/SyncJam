@@ -366,8 +366,15 @@ class SessionViewModel @Inject constructor(
                     state.copy(
                         playlist = command.tracks.mapIndexed { i, q -> q.toUi(i == currentIdx) }.toImmutableList(),
                         currentQueueIndex = currentIdx,
-                        currentTrack = command.tracks.getOrNull(currentIdx)
-                            ?.let { entry -> state.currentTrack ?: entry.trackInfo.toUi(Constants.SYNC_SERVER_HTTP_URL) }
+                        currentTrack = command.tracks.getOrNull(currentIdx)?.trackInfo
+                            ?.toUi(Constants.SYNC_SERVER_HTTP_URL)
+                            ?.let { serverTrack ->
+                                // Preserve ExoPlayer-measured durationMs for the same track
+                                val existing = state.currentTrack
+                                if (existing != null && existing.id == serverTrack.id && existing.durationMs > 0)
+                                    serverTrack.copy(durationMs = existing.durationMs)
+                                else serverTrack
+                            }
                             ?: state.currentTrack
                     )
                 }
