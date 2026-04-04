@@ -68,15 +68,15 @@ class AuthViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 supabase.auth.signInWith(Email) {
-                    this.email = email
+                    this.email = email.trim()
                     this.password = password
                 }
                 if (rememberMe) {
-                    sessionPrefs.saveCredentials(email, password)
+                    sessionPrefs.saveCredentials(email.trim(), password)
                 } else {
                     sessionPrefs.clearCredentials()
                 }
-                _uiState.update { it.copy(isLoading = false, isLoggedIn = true, userName = email) }
+                _uiState.update { it.copy(isLoading = false, isLoggedIn = true, userName = email.trim()) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = e.message ?: "Anmeldung fehlgeschlagen") }
             }
@@ -88,17 +88,15 @@ class AuthViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 supabase.auth.signUpWith(Email) {
-                    this.email = email
+                    this.email = email.trim()
                     this.password = password
                 }
-                // Auto-sign in after signup (works when email confirmation is disabled)
-                supabase.auth.signInWith(Email) {
-                    this.email = email
-                    this.password = password
-                }
-                _uiState.update { it.copy(isLoading = false, isLoggedIn = true, userName = email) }
+                // signUpWith already creates a session (mailer_autoconfirm=true).
+                // Always save credentials so checkSession can restore the session after restart.
+                sessionPrefs.saveCredentials(email.trim(), password)
+                _uiState.update { it.copy(isLoading = false, isLoggedIn = true, userName = email.trim()) }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Registration failed") }
+                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Registrierung fehlgeschlagen") }
             }
         }
     }
