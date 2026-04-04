@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.syncjam.app.core.common.Constants
 import com.syncjam.app.sync.ParticipantInfo
@@ -61,6 +62,24 @@ class SessionViewModel @Inject constructor(
     private var currentUserId = ""
     private var currentDisplayName = ""
     private var isHostSession = false
+
+    init {
+        // Update durationMs from ExoPlayer once the track is ready (server may report 0)
+        exoPlayer.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY) {
+                    val realDuration = exoPlayer.duration
+                    if (realDuration > 0) {
+                        _uiState.update { state ->
+                            val track = state.currentTrack ?: return@update state
+                            if (track.durationMs > 0) return@update state // already known
+                            state.copy(currentTrack = track.copy(durationMs = realDuration))
+                        }
+                    }
+                }
+            }
+        })
+    }
 
     // ── Position Ticker ───────────────────────────────────────────────────────
 

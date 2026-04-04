@@ -112,8 +112,9 @@ fun Route.youtubeRoutes(
 
         // Notify session that download started (fire quick getInfo first)
         downloadScope.launch {
+            val cleanUrl = ytDlpService.cleanVideoUrl(request.youtubeUrl)
             val session = sessionManager.getSessionByCode(request.sessionCode)
-            val quickInfo = ytDlpService.getInfo(request.youtubeUrl)
+            val quickInfo = ytDlpService.getInfo(cleanUrl)
             if (session != null) {
                 broadcaster.broadcast(
                     session,
@@ -127,7 +128,7 @@ fun Route.youtubeRoutes(
             }
 
             try {
-                val result = ytDlpService.download(request.youtubeUrl)
+                val result = ytDlpService.download(cleanUrl)
                 val sessionAfter = sessionManager.getSessionByCode(request.sessionCode)
 
                 if (result != null && sessionAfter != null) {

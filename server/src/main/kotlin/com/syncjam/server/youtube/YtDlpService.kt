@@ -92,23 +92,39 @@ class YtDlpService(
         }
     }
 
+    private fun sidecarFile(ytId: String) = File("$downloadDir/$ytId.meta.json")
+
+    private fun readSidecar(ytId: String): YtDlpJsonOutput? = runCatching {
+        val f = sidecarFile(ytId)
+        if (!f.exists()) return null
+        ytDlpJson.decodeFromString<YtDlpJsonOutput>(f.readText())
+    }.getOrNull()
+
+    private fun writeSidecar(ytId: String, meta: YtDlpJsonOutput) = runCatching {
+        sidecarFile(ytId).writeText(ytDlpJson.encodeToString(YtDlpJsonOutput.serializer(), meta))
+    }
+
     suspend fun download(youtubeUrl: String): YtDlpResult? = withContext(Dispatchers.IO) {
         try {
             val ytId = extractYouTubeId(youtubeUrl) ?: return@withContext null
             val outputTemplate = "$downloadDir/$ytId.%(ext)s"
 
-            // Check if already downloaded — skip re-download
+            // Check if already downloaded — read metadata from sidecar to avoid re-querying YouTube
             val existingFile = findExistingFile(ytId)
             if (existingFile != null) {
                 logger.info("Already downloaded: $ytId at ${existingFile.absolutePath}")
-                val info = getInfo(youtubeUrl)
+                val meta = readSidecar(ytId)
+                val title = meta?.title?.takeIf { it.isNotBlank() } ?: ytId
+                val artist = meta?.let { it.uploader ?: it.channel }?.takeIf { it.isNotBlank() } ?: "YouTube"
+                val durationMs = meta?.duration?.let { (it * 1000.0).toLong() } ?: 0L
+                logger.info("Loaded from sidecar: $ytId -> title='$title'")
                 return@withContext YtDlpResult(
                     id = ytId,
-                    title = info?.title ?: ytId,
-                    artist = info?.uploader ?: "YouTube",
-                    durationMs = (info?.duration ?: 0L) * 1000L,
+                    title = title,
+                    artist = artist,
+                    durationMs = durationMs,
                     filePath = existingFile.absolutePath,
-                    thumbnailUrl = info?.thumbnail,
+                    thumbnailUrl = meta?.thumbnail?.takeIf { it.isNotBlank() && it != "none" },
                     youtubeId = ytId,
                     fileSize = existingFile.length()
                 )
@@ -172,6 +188,9 @@ class YtDlpService(
 
             logger.info("Parsed metadata for $ytId: title='$title', artist='$artist', duration=${durationMs}ms")
 
+            // Persist metadata so cached re-requests don't need a second yt-dlp call
+            if (parsedInfo != null) writeSidecar(ytId, parsedInfo)
+
             YtDlpResult(
                 id = ytId,
                 title = title,
@@ -206,5 +225,11 @@ class YtDlpService(
             Regex("youtube\\.com/shorts/([a-zA-Z0-9_-]{11})")
         )
         return patterns.firstNotNullOfOrNull { it.find(url)?.groupValues?.getOrNull(1) }
+    }
+
+    /** Strips playlist and index params so yt-dlp only sees a clean video URL. */
+    fun cleanVideoUrl(url: String): String {
+        val ytId = extractYouTubeId(url) ?: return url
+        return "https://www.youtube.com/watch?v=$ytId"
     }
 }
