@@ -1,0 +1,217 @@
+package com.syncjam.app.feature.voting.presentation.components
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.syncjam.app.feature.session.presentation.QueueEntryUi
+import com.syncjam.app.feature.session.presentation.TrackSourceUi
+
+@Composable
+fun QueueTrackItem(
+    entry: QueueEntryUi,
+    currentUserId: String,
+    onUpvote: () -> Unit,
+    onDownvote: () -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cardColor by animateColorAsState(
+        targetValue = if (entry.isCurrent) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.surfaceContainer
+        },
+        label = "cardColor"
+    )
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Thumbnail / Icon
+            TrackThumbnail(entry)
+
+            // Track info
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (entry.isCurrent) {
+                        Text(
+                            "▶  ",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        entry.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (entry.isCurrent) FontWeight.Bold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    entry.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    SourceBadge(entry.source)
+                    Text(
+                        formatDuration(entry.durationMs),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        "• ${entry.requestedByName.ifEmpty { entry.requestedBy }}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Vote controls
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = onUpvote, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.ThumbUp,
+                        contentDescription = "Upvote",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    entry.score.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = when {
+                        entry.score > 0 -> MaterialTheme.colorScheme.primary
+                        entry.score < 0 -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                IconButton(onClick = onDownvote, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.ThumbDown,
+                        contentDescription = "Downvote",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Remove (only own tracks or host)
+            if (entry.requestedBy == currentUserId) {
+                IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Remove",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackThumbnail(entry: QueueEntryUi) {
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        if (entry.thumbnailUrl != null) {
+            AsyncImage(
+                model = entry.thumbnailUrl,
+                contentDescription = null,
+                modifier = Modifier.size(52.dp),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Icon(
+                Icons.Default.AudioFile,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceBadge(source: TrackSourceUi) {
+    val (label, containerColor) = when (source) {
+        TrackSourceUi.YOUTUBE -> "YT" to MaterialTheme.colorScheme.errorContainer
+        TrackSourceUi.LOCAL -> "Local" to MaterialTheme.colorScheme.secondaryContainer
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(containerColor)
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSec = ms / 1000
+    val min = totalSec / 60
+    val sec = totalSec % 60
+    return "%d:%02d".format(min, sec)
+}

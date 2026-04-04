@@ -1,0 +1,17 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Android build outputs
+app/build/
+server/build/
+
+# Keystore (keep in repo for simplicity since it's self-signed)
+# syncjam-release.jks

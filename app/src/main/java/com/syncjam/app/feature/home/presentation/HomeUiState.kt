@@ -1,0 +1,10 @@
+package com.syncjam.app.feature.home.presentation
+
+import androidx.compose.runtime.Immutable
+import com.syncjam.app.db.entity.SessionHistoryEntity
+
+@Immutable
+data class HomeUiState(
+    val recentSessions: List<SessionHistoryEntity> = emptyList(),
+    val isLoading: Boolean = false
+)
