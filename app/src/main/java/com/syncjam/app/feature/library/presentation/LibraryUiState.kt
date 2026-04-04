@@ -19,5 +19,6 @@ data class TrackUi(
     val album: String,
     val durationMs: Long,
     val durationDisplay: String,
-    val albumArtUri: String?
+    val albumArtUri: String?,
+    val contentUri: String
 )

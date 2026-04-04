@@ -617,10 +617,15 @@ private fun AlbumArtSection(
         animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse)
     )
 
-    val albumArtUri = remember(currentTrack?.id) {
-        val trackId = currentTrack?.id?.toLongOrNull()
-        if (trackId != null) Uri.parse("content://media/external/audio/media/$trackId/albumart")
-        else null
+    val albumArtUri = remember(currentTrack?.id, currentTrack?.albumArtUri) {
+        when {
+            // Prefer the uploaded Supabase URL (works for both host and guest)
+            currentTrack?.albumArtUri != null -> Uri.parse(currentTrack.albumArtUri)
+            // Fallback: derive from local MediaStore (host-only)
+            currentTrack?.id?.toLongOrNull() != null ->
+                Uri.parse("content://media/external/audio/media/${currentTrack.id}/albumart")
+            else -> null
+        }
     }
 
     val primaryColor = MaterialTheme.colorScheme.primary

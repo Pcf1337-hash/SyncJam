@@ -22,6 +22,7 @@ data class SessionUiState(
     val participants: ImmutableList<ParticipantUi> = persistentListOf(),
     val participantCount: Int = 0,
     val ytDownloadState: YtDownloadState? = null,
+    val isUploadingTrack: Boolean = false,
     val error: String? = null,
     val isMicMuted: Boolean = true,
     val musicVolume: Float = 1f,
@@ -89,7 +90,9 @@ sealed interface SessionEvent {
         val trackId: String,
         val title: String,
         val artist: String,
-        val durationMs: Long
+        val durationMs: Long,
+        val contentUri: String,
+        val albumArtUri: String?
     ) : SessionEvent
     data class AddYouTubeTrack(val url: String) : SessionEvent
     data class Vote(val requestId: String, val voteType: Int) : SessionEvent

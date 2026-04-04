@@ -1,5 +1,6 @@
 package com.syncjam.app.feature.session.presentation
 
+import android.content.Context
 import android.content.ContentUris
 import android.net.Uri
 import android.provider.MediaStore
@@ -15,8 +16,10 @@ import com.syncjam.app.sync.QueueEntry
 import com.syncjam.app.sync.SyncCommand
 import com.syncjam.app.sync.TrackInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.storage.storage
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.websocket.webSocket
@@ -47,6 +50,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SessionViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val httpClient: HttpClient,
     private val json: Json,
     private val supabase: SupabaseClient,
@@ -174,7 +178,7 @@ class SessionViewModel @Inject constructor(
             is SessionEvent.LeaveSession -> leaveSession()
             is SessionEvent.TogglePlayPause -> togglePlayPause()
             is SessionEvent.SendReaction -> sendReaction(event.emoji)
-            is SessionEvent.AddLocalTrackToQueue -> addLocalTrack(event.trackId, event.title, event.artist, event.durationMs)
+            is SessionEvent.AddLocalTrackToQueue -> addLocalTrack(event.trackId, event.title, event.artist, event.durationMs, event.contentUri, event.albumArtUri)
             is SessionEvent.AddYouTubeTrack -> addYouTubeTrack(event.url)
             is SessionEvent.Vote -> vote(event.requestId, event.voteType)
             is SessionEvent.RemoveFromQueue -> removeFromQueue(event.requestId)
@@ -272,10 +276,12 @@ class SessionViewModel @Inject constructor(
         stopExo()
         wsJob?.cancel()
         wsJob = null
+        if (isHostSession) deleteSessionFiles(currentSessionCode)
         _uiState.update { SessionUiState() }
         currentSessionCode = ""
         currentUserId = ""
         currentDisplayName = ""
+        isHostSession = false
     }
 
     // ── WebSocket Connection ──────────────────────────────────────────────────
@@ -478,16 +484,99 @@ class SessionViewModel @Inject constructor(
 
     // ── Playlist Actions ──────────────────────────────────────────────────────
 
-    private fun addLocalTrack(trackId: String, title: String, artist: String, durationMs: Long) {
-        sendCommand(
-            SyncCommand.AddToQueue(
-                requestId = "req_${UUID.randomUUID()}",
-                trackInfo = TrackInfo(trackId, title, artist, durationMs),
-                requestedBy = currentUserId,
-                requestedByName = currentDisplayName,
-                source = "LOCAL"
+    private fun addLocalTrack(
+        trackId: String,
+        title: String,
+        artist: String,
+        durationMs: Long,
+        contentUri: String,
+        albumArtUri: String?
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUploadingTrack = true) }
+            val requestId = "req_${UUID.randomUUID()}"
+            var streamUrl: String? = null
+            var albumArtUrl: String? = null
+            try {
+                val audioBytes = readBytesFromUri(contentUri)
+                if (audioBytes != null) {
+                    val ext = getMimeTypeExt(contentUri)
+                    val path = "$currentSessionCode/$requestId.$ext"
+                    supabase.storage.from("session-tracks").upload(path, audioBytes) { upsert = true }
+                    streamUrl = supabase.storage.from("session-tracks").publicUrl(path)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Audio upload failed: ${e.message}")
+            }
+            try {
+                if (albumArtUri != null) {
+                    val artBytes = readBytesFromUri(albumArtUri)
+                    if (artBytes != null) {
+                        val artPath = "$currentSessionCode/$requestId.jpg"
+                        supabase.storage.from("session-art").upload(artPath, artBytes) { upsert = true }
+                        albumArtUrl = supabase.storage.from("session-art").publicUrl(artPath)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Art upload failed: ${e.message}")
+            }
+            _uiState.update { it.copy(isUploadingTrack = false) }
+            sendCommand(
+                SyncCommand.AddToQueue(
+                    requestId = requestId,
+                    trackInfo = TrackInfo(trackId, title, artist, durationMs, streamUrl = streamUrl, albumArtUrl = albumArtUrl),
+                    requestedBy = currentUserId,
+                    requestedByName = currentDisplayName,
+                    source = "LOCAL"
+                )
             )
-        )
+        }
+    }
+
+    private suspend fun readBytesFromUri(uriString: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(Uri.parse(uriString))?.use { it.readBytes() }
+        } catch (e: Exception) {
+            Log.w(TAG, "readBytesFromUri failed for $uriString: ${e.message}")
+            null
+        }
+    }
+
+    private fun getMimeTypeExt(uriString: String): String {
+        val mime = try { context.contentResolver.getType(Uri.parse(uriString)) } catch (_: Exception) { null }
+        return when (mime) {
+            "audio/flac" -> "flac"
+            "audio/ogg" -> "ogg"
+            "audio/mp4", "audio/x-m4a" -> "m4a"
+            "audio/wav", "audio/x-wav" -> "wav"
+            "audio/aac" -> "aac"
+            "audio/opus" -> "opus"
+            "audio/3gpp" -> "3gp"
+            "audio/webm" -> "webm"
+            else -> "mp3"
+        }
+    }
+
+    private fun deleteSessionFiles(sessionCode: String) {
+        if (sessionCode.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tracks = supabase.storage.from("session-tracks").list(sessionCode)
+                if (tracks.isNotEmpty()) {
+                    supabase.storage.from("session-tracks").delete(tracks.map { "$sessionCode/${it.name}" })
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "deleteSessionFiles tracks failed: ${e.message}")
+            }
+            try {
+                val art = supabase.storage.from("session-art").list(sessionCode)
+                if (art.isNotEmpty()) {
+                    supabase.storage.from("session-art").delete(art.map { "$sessionCode/${it.name}" })
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "deleteSessionFiles art failed: ${e.message}")
+            }
+        }
     }
 
     private fun addYouTubeTrack(url: String) {
@@ -582,8 +671,12 @@ class SessionViewModel @Inject constructor(
             title = title,
             artist = artist,
             durationMs = durationMs,
-            albumArtUri = null,
-            streamUrl = if (isYt) "$serverBaseUrl/youtube/stream/$ytId" else null
+            albumArtUri = albumArtUrl,
+            streamUrl = when {
+                isYt -> "$serverBaseUrl/youtube/stream/$ytId"
+                streamUrl != null -> streamUrl
+                else -> null
+            }
         )
     }
 

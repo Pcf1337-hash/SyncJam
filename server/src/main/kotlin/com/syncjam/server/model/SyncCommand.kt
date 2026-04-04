@@ -4,7 +4,14 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class TrackInfo(val id: String, val title: String, val artist: String, val durationMs: Long)
+data class TrackInfo(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val durationMs: Long,
+    val streamUrl: String? = null,
+    val albumArtUrl: String? = null
+)
 
 @Serializable
 data class QueueEntry(

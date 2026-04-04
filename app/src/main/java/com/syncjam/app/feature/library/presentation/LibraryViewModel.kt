@@ -71,7 +71,8 @@ class LibraryViewModel @Inject constructor(
         album = album,
         durationMs = durationMs,
         durationDisplay = formatDuration(durationMs),
-        albumArtUri = albumArtUri
+        albumArtUri = albumArtUri,
+        contentUri = contentUri
     )
 
     private fun formatDuration(ms: Long): String {
