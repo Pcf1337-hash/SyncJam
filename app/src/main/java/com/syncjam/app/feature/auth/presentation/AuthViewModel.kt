@@ -46,8 +46,8 @@ class AuthViewModel @Inject constructor(
                 }
                 // Fall back to saved credentials (remember me)
                 if (sessionPrefs.isRememberMeEnabled()) {
-                    val email = sessionPrefs.getSavedEmail() ?: return@launch
-                    val password = sessionPrefs.getSavedPassword() ?: return@launch
+                    val email = sessionPrefs.getSavedEmail()?.takeIf { it.isNotBlank() } ?: return@launch
+                    val password = sessionPrefs.getSavedPassword()?.takeIf { it.isNotBlank() } ?: return@launch
                     _uiState.update { it.copy(isLoading = true) }
                     supabase.auth.signInWith(Email) {
                         this.email = email
@@ -56,6 +56,8 @@ class AuthViewModel @Inject constructor(
                     _uiState.update { it.copy(isLoading = false, isLoggedIn = true, userName = email) }
                 }
             } catch (_: Exception) {
+                // Silent failure — clear invalid saved credentials, user can still guest-login
+                sessionPrefs.clearCredentials()
                 _uiState.update { it.copy(isLoading = false) }
             }
         }

@@ -168,7 +168,7 @@ class SessionViewModel @Inject constructor(
 
     fun onEvent(event: SessionEvent) {
         when (event) {
-            is SessionEvent.CreateSession -> createSession(event.name, event.userId, event.displayName)
+            is SessionEvent.CreateSession -> createSession(event.name, event.userId, event.displayName, event.autoDeleteAfterHours)
             is SessionEvent.JoinSession -> joinSession(event.code, event.userId, event.displayName)
             is SessionEvent.ConnectToExistingSession -> connectToExistingSession(event.sessionCode, event.isHost, event.displayName)
             is SessionEvent.LeaveSession -> leaveSession()
@@ -188,7 +188,7 @@ class SessionViewModel @Inject constructor(
 
     // ── Session Lifecycle ─────────────────────────────────────────────────────
 
-    private fun createSession(name: String, userId: String, displayName: String) {
+    private fun createSession(name: String, userId: String, displayName: String, autoDeleteAfterHours: Int = 0) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
@@ -198,6 +198,7 @@ class SessionViewModel @Inject constructor(
                     put("hostId", resolvedUserId)
                     put("hostName", resolvedName)
                     put("sessionName", name)
+                    put("autoDeleteAfterHours", autoDeleteAfterHours)
                 }
                 val response = httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/session") {
                     contentType(ContentType.Application.Json)

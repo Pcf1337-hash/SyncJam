@@ -79,7 +79,7 @@ sealed interface YtDownloadState {
 }
 
 sealed interface SessionEvent {
-    data class CreateSession(val name: String, val userId: String, val displayName: String) : SessionEvent
+    data class CreateSession(val name: String, val userId: String, val displayName: String, val autoDeleteAfterHours: Int = 0) : SessionEvent
     data class JoinSession(val code: String, val userId: String, val displayName: String) : SessionEvent
     data class ConnectToExistingSession(val sessionCode: String, val isHost: Boolean, val displayName: String = "") : SessionEvent
     data object LeaveSession : SessionEvent

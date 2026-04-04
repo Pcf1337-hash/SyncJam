@@ -1,11 +1,12 @@
 package com.syncjam.app.feature.session.presentation
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,12 +41,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.WifiOff
@@ -85,17 +85,19 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.roundToInt
@@ -112,6 +114,7 @@ fun SessionScreen(
     viewModel: SessionViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LaunchedEffect(sessionCode) {
         if (sessionCode.isNotEmpty() && uiState.sessionCode.isEmpty()) {
@@ -168,7 +171,15 @@ fun SessionScreen(
                     },
                     actions = {
                         if (uiState.sessionCode.isNotEmpty()) {
-                            IconButton(onClick = {}) {
+                            IconButton(onClick = {
+                                val shareText = "Komm in meine SyncJam Session! 🎵\nCode: ${uiState.sessionCode}\nsyncjam://join/${uiState.sessionCode}"
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, shareText)
+                                    putExtra(Intent.EXTRA_SUBJECT, "SyncJam Session ${uiState.sessionCode}")
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Session teilen"))
+                            }) {
                                 Icon(Icons.Default.Share, "Teilen")
                             }
                         }
@@ -199,12 +210,10 @@ fun SessionScreen(
 
                 AlbumArtSection(
                     isPlaying = uiState.isPlaying,
-                    isYoutube = uiState.currentTrack?.streamUrl != null,
-                    hasTrack = uiState.currentTrack != null,
+                    currentTrack = uiState.currentTrack,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .padding(16.dp)
+                        .padding(vertical = 8.dp)
                 )
 
                 Spacer(Modifier.height(16.dp))
@@ -588,95 +597,144 @@ private fun PlayerBottomBar(
 @Composable
 private fun AlbumArtSection(
     isPlaying: Boolean,
-    isYoutube: Boolean,
-    hasTrack: Boolean,
+    currentTrack: CurrentTrackUi?,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "vinyl")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f, label = "rotate",
-        animationSpec = infiniteRepeatable(tween(12000, easing = LinearEasing), RepeatMode.Restart)
-    )
     val scale by animateFloatAsState(
-        targetValue = if (isPlaying) 1f else 0.88f,
-        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        targetValue = if (isPlaying) 1f else 0.94f,
+        animationSpec = tween(400, easing = FastOutSlowInEasing),
         label = "scale"
     )
-    val glowAlpha by animateFloatAsState(
-        targetValue = if (isPlaying) 0.5f else 0.15f,
-        animationSpec = tween(500),
-        label = "glow"
+    val shadowElevation by animateFloatAsState(
+        targetValue = if (isPlaying) 28f else 6f,
+        animationSpec = tween(400),
+        label = "shadow"
+    )
+    // Subtle breathing pulse when playing
+    val breathTransition = rememberInfiniteTransition(label = "breathe")
+    val breathScale by breathTransition.animateFloat(
+        initialValue = 1f, targetValue = 1.015f, label = "breath",
+        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse)
     )
 
+    val albumArtUri = remember(currentTrack?.id) {
+        val trackId = currentTrack?.id?.toLongOrNull()
+        if (trackId != null) Uri.parse("content://media/external/audio/media/$trackId/albumart")
+        else null
+    }
+
     val primaryColor = MaterialTheme.colorScheme.primary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        val cardScale = scale * if (isPlaying) breathScale else 1f
         Box(
             modifier = Modifier
-                .fillMaxSize(0.85f)
-                .graphicsLayer { scaleX = scale; scaleY = scale }
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(primaryColor.copy(alpha = glowAlpha), Color.Transparent)
-                    ),
-                    shape = CircleShape
-                )
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize(0.82f)
-                .graphicsLayer {
-                    scaleX = scale; scaleY = scale
-                    if (isPlaying) rotationZ = rotation
-                }
-                .shadow(if (isPlaying) 24.dp else 8.dp, CircleShape)
-                .clip(CircleShape)
-                .background(surfaceVariantColor),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth(0.72f)
+                .aspectRatio(1f)
+                .graphicsLayer { scaleX = cardScale; scaleY = cardScale }
+                .shadow(shadowElevation.dp, RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(20.dp))
         ) {
-            val grooveColor = primaryColor.copy(alpha = 0.08f)
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val cx = size.width / 2
-                val cy = size.height / 2
-                val maxR = minOf(size.width, size.height) / 2
-                for (i in 1..8) {
-                    val r = maxR * (0.4f + i * 0.07f)
-                    drawCircle(
-                        color = grooveColor, radius = r, center = Offset(cx, cy),
-                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f)
+            when {
+                albumArtUri != null -> {
+                    AsyncImage(
+                        model = albumArtUri,
+                        contentDescription = currentTrack?.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        error = null,
+                        onError = null
+                    )
+                    // If art fails to load, Box below acts as fallback via background
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        primaryColor.copy(alpha = 0.55f),
+                                        tertiaryColor.copy(alpha = 0.65f)
+                                    )
+                                )
+                            )
+                    )
+                    // Re-draw art on top of gradient so it shows when loaded
+                    AsyncImage(
+                        model = albumArtUri,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                else -> {
+                    // Gradient fallback
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(
+                                        primaryColor.copy(alpha = 0.75f),
+                                        tertiaryColor.copy(alpha = 0.85f)
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.MusicNote,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(0.38f),
+                            tint = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                }
+            }
+
+            // Dark overlay when paused
+            if (!isPlaying && currentTrack != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.30f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(34.dp),
+                            tint = Color.White.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+            }
+
+            // Idle state (no track)
+            if (currentTrack == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(surfaceVariantColor),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(0.35f),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                     )
                 }
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize(0.4f)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(primaryColor, primaryColor.copy(alpha = 0.7f))
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (isYoutube) Icons.Default.PlayArrow else Icons.Default.MusicNote,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(0.5f),
-                    tint = Color.White
-                )
-            }
         }
-
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surface)
-                .graphicsLayer { scaleX = scale; scaleY = scale }
-        )
     }
 }
 
@@ -690,12 +748,14 @@ private fun AudioWaveformVisualizer(
     modifier: Modifier = Modifier
 ) {
     val barCount = 36
-    val infiniteTransition = rememberInfiniteTransition(label = "waveform")
-    // Fast animation cycle for live-feel
-    val animTime by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 1f, label = "time",
-        animationSpec = infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Restart)
-    )
+    // animTime only ticks when playing — freezes completely when stopped
+    var animTime by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(isPlaying) {
+        while (isPlaying) {
+            delay(16L)
+            animTime = (animTime + 0.02667f) % 1f
+        }
+    }
     val amplitude by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.06f,
         animationSpec = tween(350),

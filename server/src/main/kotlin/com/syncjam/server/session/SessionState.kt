@@ -19,6 +19,8 @@ data class SessionState(
     val sessionName: String,
     val hostId: String,
     val createdAt: Long = System.currentTimeMillis(),
+    /** Unix ms when the session should be auto-deleted; null = never */
+    val expiresAt: Long? = null,
     var currentTrack: TrackInfo? = null,
     var positionMs: Long = 0L,
     var isPlaying: Boolean = false,

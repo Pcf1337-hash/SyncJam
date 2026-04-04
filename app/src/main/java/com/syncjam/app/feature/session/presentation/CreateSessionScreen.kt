@@ -1,14 +1,18 @@
 package com.syncjam.app.feature.session.presentation
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +32,13 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncjam.app.core.ui.components.SyncJamButton
 
+private enum class AutoDeleteOption(val label: String, val hours: Int) {
+    NEVER("Nie", 0),
+    ONE_DAY("1 Tag", 24),
+    ONE_WEEK("1 Woche", 168),
+    ONE_MONTH("1 Monat", 720)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateSessionScreen(
@@ -38,6 +49,7 @@ fun CreateSessionScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var sessionName by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
+    var autoDeleteOption by remember { mutableStateOf(AutoDeleteOption.ONE_DAY) }
 
     LaunchedEffect(uiState.sessionId, uiState.sessionCode) {
         val id = uiState.sessionId
@@ -75,6 +87,26 @@ fun CreateSessionScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Session automatisch löschen nach",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AutoDeleteOption.entries.forEach { option ->
+                    FilterChip(
+                        selected = autoDeleteOption == option,
+                        onClick = { autoDeleteOption = option },
+                        label = { Text(option.label, style = MaterialTheme.typography.labelSmall) },
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                }
+            }
             Spacer(Modifier.height(24.dp))
             SyncJamButton(
                 text = "Jam Session starten",
@@ -82,8 +114,9 @@ fun CreateSessionScreen(
                     viewModel.onEvent(
                         SessionEvent.CreateSession(
                             name = sessionName.ifBlank { "Jam Session" },
-                            userId = "",  // SessionViewModel holt userId von Supabase
-                            displayName = displayName.ifBlank { "Host" }
+                            userId = "",
+                            displayName = displayName.ifBlank { "Host" },
+                            autoDeleteAfterHours = autoDeleteOption.hours
                         )
                     )
                 },

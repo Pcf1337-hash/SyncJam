@@ -6,7 +6,9 @@ import kotlinx.serialization.Serializable
 data class CreateSessionRequest(
     val hostId: String,
     val hostName: String,
-    val sessionName: String = "Jam Session"
+    val sessionName: String = "Jam Session",
+    /** 0 = never auto-delete, otherwise delete after this many hours of inactivity */
+    val autoDeleteAfterHours: Int = 0
 )
 
 @Serializable

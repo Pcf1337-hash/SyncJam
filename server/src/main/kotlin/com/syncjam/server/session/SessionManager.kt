@@ -2,6 +2,7 @@ package com.syncjam.server.session
 
 import com.syncjam.server.model.CreateSessionRequest
 import io.ktor.websocket.*
+import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
@@ -10,18 +11,33 @@ class SessionManager {
     private val sessions = ConcurrentHashMap<String, SessionState>()
     private val codeToId = ConcurrentHashMap<String, String>()
 
+    init {
+        // Background job: prune expired sessions every 5 minutes
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            while (true) {
+                delay(5 * 60 * 1000L)
+                pruneExpired()
+            }
+        }
+    }
+
     fun createSession(request: CreateSessionRequest): SessionState {
         val sessionId = generateId()
         val sessionCode = generateCode()
+        val expiresAt = if (request.autoDeleteAfterHours > 0) {
+            System.currentTimeMillis() + request.autoDeleteAfterHours * 3_600_000L
+        } else null
         val state = SessionState(
             sessionId = sessionId,
             sessionCode = sessionCode,
             sessionName = request.sessionName,
-            hostId = request.hostId
+            hostId = request.hostId,
+            expiresAt = expiresAt
         )
         sessions[sessionId] = state
         codeToId[sessionCode] = sessionId
-        logger.info("Session created: $sessionCode ($sessionId) by ${request.hostId}")
+        logger.info("Session created: $sessionCode ($sessionId) by ${request.hostId}" +
+            if (expiresAt != null) " — expires in ${request.autoDeleteAfterHours}h" else " — never expires")
         return state
     }
 
@@ -47,11 +63,22 @@ class SessionManager {
 
     fun removeClient(sessionCode: String, userId: String) {
         getSessionByCode(sessionCode)?.clients?.remove(userId)
-        logger.info("Client $userId left session $sessionCode")
-        // Auto-cleanup empty sessions
-        val session = getSessionByCode(sessionCode)
-        if (session != null && session.clients.isEmpty()) {
-            removeSession(session.sessionId)
+        logger.info("Client $userId left session $sessionCode — session persists")
+        // Sessions are NOT auto-deleted when empty; they expire via expiresAt or host DELETE
+    }
+
+    fun getAllSessions(): List<SessionState> = sessions.values.toList()
+
+    private fun pruneExpired() {
+        val now = System.currentTimeMillis()
+        val expired = sessions.values.filter { s -> s.expiresAt != null && s.expiresAt <= now }
+        expired.forEach { s ->
+            // Disconnect any lingering clients
+            s.clients.values.forEach { client ->
+                runCatching { runBlocking { client.session.close(CloseReason(CloseReason.Codes.NORMAL, "Session expired")) } }
+            }
+            removeSession(s.sessionId)
+            logger.info("Session ${s.sessionCode} expired and was removed")
         }
     }
 
