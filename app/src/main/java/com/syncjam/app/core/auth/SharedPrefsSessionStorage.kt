@@ -7,6 +7,7 @@ private const val KEY_EMAIL = "saved_email"
 private const val KEY_PASSWORD = "saved_password"
 private const val KEY_REMEMBER = "remember_me"
 private const val KEY_DISPLAY_NAME = "display_name"
+private const val KEY_AVATAR_URL = "avatar_url"
 private const val KEY_LAST_SESSION_CODE = "last_session_code"
 private const val KEY_LAST_SESSION_IS_HOST = "last_session_is_host"
 
@@ -42,6 +43,18 @@ class SessionPrefs(context: Context) {
     }
 
     fun getDisplayName(): String? = prefs.getString(KEY_DISPLAY_NAME, null)?.takeIf { it.isNotBlank() }
+
+    // ── Avatar URL ────────────────────────────────────────────────────────────
+
+    fun saveAvatarUrl(url: String) {
+        prefs.edit().putString(KEY_AVATAR_URL, url).apply()
+    }
+
+    fun getAvatarUrl(): String? = prefs.getString(KEY_AVATAR_URL, null)?.takeIf { it.isNotBlank() }
+
+    fun clearAvatarUrl() {
+        prefs.edit().remove(KEY_AVATAR_URL).apply()
+    }
 
     // ── Last active session (for quick rejoin) ────────────────────────────────
 

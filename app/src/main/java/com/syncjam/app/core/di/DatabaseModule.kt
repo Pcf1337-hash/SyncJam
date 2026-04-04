@@ -2,6 +2,7 @@ package com.syncjam.app.core.di
 
 import android.content.Context
 import androidx.room.Room
+import com.syncjam.app.db.MIGRATION_1_2
 import com.syncjam.app.db.SyncJamDatabase
 import dagger.Module
 import dagger.Provides
@@ -16,7 +17,9 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): SyncJamDatabase =
-        Room.databaseBuilder(context, SyncJamDatabase::class.java, "syncjam.db").build()
+        Room.databaseBuilder(context, SyncJamDatabase::class.java, "syncjam.db")
+            .addMigrations(MIGRATION_1_2)
+            .build()
 
     @Provides
     fun provideLocalTrackDao(db: SyncJamDatabase) = db.localTrackDao()

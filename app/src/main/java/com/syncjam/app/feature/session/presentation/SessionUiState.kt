@@ -70,7 +70,8 @@ data class ParticipantUi(
     val avatarUrl: String?,
     val isHost: Boolean,
     val isAdmin: Boolean = false,
-    val mutedByAdmin: Boolean = false
+    val mutedByAdmin: Boolean = false,
+    val isSpeaking: Boolean = false
 )
 
 @Immutable

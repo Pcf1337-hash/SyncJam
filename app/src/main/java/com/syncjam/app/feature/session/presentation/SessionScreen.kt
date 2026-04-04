@@ -1,5 +1,6 @@
 package com.syncjam.app.feature.session.presentation
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
@@ -84,6 +85,13 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.shouldShowRationale
+import com.syncjam.app.feature.voice.presentation.VoiceOverlay
+import com.syncjam.app.feature.voice.presentation.VoiceViewModel
+import com.syncjam.app.feature.voice.presentation.components.MuteButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,12 +115,13 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.delay
 import kotlin.math.PI
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun SessionScreen(
     sessionCode: String = "",
@@ -120,10 +129,43 @@ fun SessionScreen(
     displayName: String = "",
     onLeave: () -> Unit,
     onOpenPlaylist: () -> Unit,
-    viewModel: SessionViewModel = hiltViewModel()
+    viewModel: SessionViewModel = hiltViewModel(),
+    voiceViewModel: VoiceViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val voiceState by voiceViewModel.voiceState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // ── RECORD_AUDIO Permission + Push-to-Talk ────────────────────────────────
+    val micPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
+    var showMicRationale by remember { mutableStateOf(false) }
+
+    /**
+     * PTT-Taste gedrückt: Permission prüfen → Mic aktivieren + Music ducken.
+     */
+    val handlePttPress: () -> Unit = {
+        when {
+            micPermission.status.isGranted -> {
+                // Nur aktivieren wenn noch nicht aktiv (verhindert doppeltes Toggle)
+                if (uiState.isMicMuted) viewModel.onEvent(SessionEvent.ToggleMic)
+                voiceViewModel.onPttPressed(
+                    sessionId = uiState.sessionId ?: uiState.sessionCode,
+                    userId = uiState.currentUserId,
+                    displayName = displayName
+                )
+            }
+            micPermission.status.shouldShowRationale -> showMicRationale = true
+            else -> micPermission.launchPermissionRequest()
+        }
+    }
+
+    /**
+     * PTT-Taste losgelassen: Mic deaktivieren + Music-Ducking aufheben.
+     */
+    val handlePttRelease: () -> Unit = {
+        if (!uiState.isMicMuted) viewModel.onEvent(SessionEvent.ToggleMic)
+        voiceViewModel.onPttReleased()
+    }
 
     LaunchedEffect(sessionCode) {
         if (sessionCode.isNotEmpty() && uiState.sessionCode.isEmpty()) {
@@ -135,6 +177,24 @@ fun SessionScreen(
                 )
             )
         }
+    }
+
+    // ── Mikrofon-Berechtigung Rationale-Dialog ────────────────────────────────
+    if (showMicRationale) {
+        AlertDialog(
+            onDismissRequest = { showMicRationale = false },
+            title = { Text("Mikrofon-Zugriff benötigt") },
+            text = { Text("SyncJam benötigt Zugriff auf dein Mikrofon, um Voice-Chat zu ermöglichen. Bitte erteile die Berechtigung in den Einstellungen.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showMicRationale = false
+                    micPermission.launchPermissionRequest()
+                }) { Text("Erlauben") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMicRationale = false }) { Text("Abbrechen") }
+            }
+        )
     }
 
     // Kicked dialog
@@ -210,15 +270,24 @@ fun SessionScreen(
                 )
             },
             bottomBar = {
-                PlayerBottomBar(
-                    uiState = uiState,
-                    onTogglePlayPause = { viewModel.onEvent(SessionEvent.TogglePlayPause) },
-                    onSkip = { uiState.currentTrack?.let { viewModel.onEvent(SessionEvent.SendTrackEnded(it.id)) } },
-                    onOpenPlaylist = onOpenPlaylist,
-                    onReaction = { emoji -> viewModel.onEvent(SessionEvent.SendReaction(emoji)) },
-                    onToggleMic = { viewModel.onEvent(SessionEvent.ToggleMic) },
-                    onVolumeChange = { viewModel.onEvent(SessionEvent.SetVolume(it)) }
-                )
+                Column {
+                    // Voice-Overlay schwebt direkt über dem Player-Bar
+                    VoiceOverlay(
+                        voiceState = voiceState,
+                        onPttPress = handlePttPress,
+                        onPttRelease = handlePttRelease
+                    )
+                    PlayerBottomBar(
+                        uiState = uiState,
+                        onTogglePlayPause = { viewModel.onEvent(SessionEvent.TogglePlayPause) },
+                        onSkip = { uiState.currentTrack?.let { viewModel.onEvent(SessionEvent.SendTrackEnded(it.id)) } },
+                        onOpenPlaylist = onOpenPlaylist,
+                        onReaction = { emoji -> viewModel.onEvent(SessionEvent.SendReaction(emoji)) },
+                        onMicPress = handlePttPress,
+                        onMicRelease = handlePttRelease,
+                        onVolumeChange = { viewModel.onEvent(SessionEvent.SetVolume(it)) }
+                    )
+                }
             }
         ) { padding ->
             Column(
@@ -328,8 +397,23 @@ fun SessionScreen(
                 }
 
                 if (uiState.participants.isNotEmpty()) {
+                    // Merge speaking state from voice into participants
+                    val speakingIds = voiceState.participants
+                        .filter { it.isSpeaking }
+                        .map { vp ->
+                            // In stub mode sid = "local-$userId", in real LiveKit identity = userId
+                            if (vp.sid.startsWith("local-")) vp.sid.removePrefix("local-") else vp.sid
+                        }
+                        .toSet()
+                    val mergedParticipants = uiState.participants
+                        .map { p ->
+                            val speaking = speakingIds.contains(p.userId) ||
+                                (voiceState.isSpeaking && voiceState.participants.any { it.isLocal && (it.sid == "local-${p.userId}" || it.sid == p.userId) })
+                            if (speaking != p.isSpeaking) p.copy(isSpeaking = speaking) else p
+                        }
+                        .toImmutableList()
                     ParticipantsSection(
-                        participants = uiState.participants,
+                        participants = mergedParticipants,
                         isCurrentUserAdmin = uiState.isCurrentUserAdmin,
                         onAdminEvent = { viewModel.onEvent(it) }
                     )
@@ -465,7 +549,8 @@ private fun PlayerBottomBar(
     onSkip: () -> Unit,
     onOpenPlaylist: () -> Unit,
     onReaction: (String) -> Unit,
-    onToggleMic: () -> Unit,
+    onMicPress: () -> Unit,
+    onMicRelease: () -> Unit,
     onVolumeChange: (Float) -> Unit
 ) {
     val focusManager = LocalFocusManager.current
@@ -591,24 +676,12 @@ private fun PlayerBottomBar(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FilledTonalIconButton(
-                    onClick = onToggleMic,
-                    modifier = Modifier.size(52.dp),
-                    colors = androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = if (uiState.isMicMuted)
-                            MaterialTheme.colorScheme.surfaceVariant
-                        else
-                            MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Icon(
-                        if (uiState.isMicMuted) Icons.Default.MicOff else Icons.Default.Mic,
-                        if (uiState.isMicMuted) "Mikrofon ein" else "Stummschalten",
-                        Modifier.size(24.dp),
-                        tint = if (uiState.isMicMuted) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.error
-                    )
-                }
+                MuteButton(
+                    isMuted = uiState.isMicMuted,
+                    onPress = onMicPress,
+                    onRelease = onMicRelease,
+                    size = 52.dp
+                )
 
                 FilledTonalIconButton(
                     onClick = onSkip,
@@ -1096,6 +1169,11 @@ private fun ParticipantChip(
         participant.isHost -> MaterialTheme.colorScheme.onPrimaryContainer
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val speakingBorderAlpha by animateFloatAsState(
+        targetValue = if (participant.isSpeaking) 1f else 0f,
+        animationSpec = tween(200),
+        label = "speaking_border"
+    )
     Surface(
         onClick = onClick ?: {},
         enabled = onClick != null,
@@ -1107,19 +1185,38 @@ private fun ParticipantChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(contentColor.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    participant.displayName.take(1).uppercase(),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = contentColor
+            Box(contentAlignment = Alignment.Center) {
+                // Outer green speaking ring
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF4CAF50).copy(alpha = speakingBorderAlpha))
                 )
+                // Avatar circle
+                Box(
+                    modifier = Modifier
+                        .size(if (participant.isSpeaking) 20.dp else 20.dp)
+                        .clip(CircleShape)
+                        .background(contentColor.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (participant.avatarUrl != null) {
+                        AsyncImage(
+                            model = participant.avatarUrl,
+                            contentDescription = participant.displayName,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(
+                            participant.displayName.take(1).uppercase(),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = contentColor
+                        )
+                    }
+                }
             }
             Text(
                 participant.displayName,

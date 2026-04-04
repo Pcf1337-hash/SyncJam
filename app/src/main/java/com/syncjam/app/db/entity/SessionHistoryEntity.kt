@@ -1,5 +1,6 @@
 package com.syncjam.app.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -13,5 +14,7 @@ data class SessionHistoryEntity(
     val startedAt: Long,
     val endedAt: Long?,
     val lastTrackTitle: String?,
-    val lastTrackArtist: String?
+    val lastTrackArtist: String?,
+    /** True wenn der lokale User beim Erstellen Host war (für Admin-Aktionen). */
+    @ColumnInfo(defaultValue = "0") val isHost: Boolean = false
 )

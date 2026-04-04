@@ -10,13 +10,14 @@ data class ConnectedClient(
     val userId: String,
     val displayName: String,
     val isHost: Boolean,
-    val session: DefaultWebSocketSession
+    val session: DefaultWebSocketSession,
+    val avatarUrl: String? = null
 )
 
 data class SessionState(
     val sessionId: String,
     val sessionCode: String,
-    val sessionName: String,
+    var sessionName: String,
     val hostId: String,
     val createdAt: Long = System.currentTimeMillis(),
     val expiresAt: Long? = null,
@@ -36,7 +37,7 @@ data class SessionState(
     val mutedByAdmin: MutableSet<String> = mutableSetOf()
 ) {
     fun getParticipants(): List<ParticipantInfo> = clients.values.map {
-        ParticipantInfo(it.userId, it.displayName, null, it.isHost, it.userId == adminId)
+        ParticipantInfo(it.userId, it.displayName, it.avatarUrl, it.isHost, it.userId == adminId)
     }
 
     fun estimatedCurrentPosition(): Long {

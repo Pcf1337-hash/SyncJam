@@ -5,6 +5,7 @@ import com.syncjam.server.queue.PlaylistManager
 import com.syncjam.server.queue.PlaylistTrack
 import com.syncjam.server.queue.TrackSource
 import com.syncjam.server.session.*
+import com.syncjam.server.voice.voiceTokenRoute
 import com.syncjam.server.youtube.YtDlpService
 import com.syncjam.server.youtube.youtubeRoutes
 import io.ktor.http.*
@@ -80,6 +81,11 @@ fun Application.configureRouting() {
                 ?: return@delete call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing session code"))
             val session = sessionManager.getSessionByCode(code)
                 ?: return@delete call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
+            // Nur der Host darf löschen
+            val userId = call.request.queryParameters["userId"] ?: ""
+            if (userId.isNotBlank() && userId != session.hostId) {
+                return@delete call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", "Only the host can delete this session"))
+            }
             session.clients.values.forEach { client ->
                 try { client.session.close(CloseReason(CloseReason.Codes.NORMAL, "Session ended by host")) }
                 catch (e: Exception) { logger.warn("Error closing client ${client.userId}: ${e.message}") }
@@ -87,6 +93,27 @@ fun Application.configureRouting() {
             playlistManager.clearPlaylist(session.sessionCode)
             sessionManager.removeSession(session.sessionId)
             call.respond(HttpStatusCode.NoContent)
+        }
+
+        patch("/session/{code}") {
+            val code = call.parameters["code"]
+                ?: return@patch call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing session code"))
+            val session = sessionManager.getSessionByCode(code)
+                ?: return@patch call.respond(HttpStatusCode.NotFound, ErrorResponse("NOT_FOUND", "Session not found"))
+
+            @kotlinx.serialization.Serializable
+            data class PatchBody(val sessionName: String = "", val hostId: String = "")
+            val body = runCatching { call.receive<PatchBody>() }.getOrNull()
+                ?: return@patch call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Invalid body"))
+
+            if (body.hostId.isNotBlank() && body.hostId != session.hostId) {
+                return@patch call.respond(HttpStatusCode.Forbidden, ErrorResponse("FORBIDDEN", "Only the host can rename this session"))
+            }
+            if (body.sessionName.isBlank()) {
+                return@patch call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "sessionName darf nicht leer sein"))
+            }
+            session.sessionName = body.sessionName
+            call.respond(HttpStatusCode.OK, mapOf("sessionCode" to code, "sessionName" to session.sessionName))
         }
 
         /** GET /session/{code}/playlist — Full playlist state for a session. */
@@ -167,6 +194,7 @@ fun Application.configureRouting() {
             val displayName = call.request.queryParameters["displayName"] ?: "Unknown"
             val isHost = call.request.queryParameters["host"] == "true"
             val password = call.request.queryParameters["password"] ?: ""
+            val avatarUrl = call.request.queryParameters["avatarUrl"]?.takeIf { it.isNotBlank() }
 
             val session = sessionManager.getSessionByCode(code) ?: run {
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Session not found: $code"))
@@ -187,7 +215,7 @@ fun Application.configureRouting() {
 
             // Admin is re-recognized on reconnect
             val isAdmin = userId == session.adminId
-            val client = ConnectedClient(userId, displayName, isHost || isAdmin, this)
+            val client = ConnectedClient(userId, displayName, isHost || isAdmin, this, avatarUrl)
             if (!sessionManager.addClient(code, client)) {
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Session is full (max 8 participants)"))
                 return@webSocket
@@ -224,7 +252,7 @@ fun Application.configureRouting() {
             broadcaster.broadcast(
                 session,
                 SyncCommand.ParticipantJoined(
-                    participant = ParticipantInfo(userId, displayName, null, isHost),
+                    participant = ParticipantInfo(userId, displayName, avatarUrl, isHost),
                     serverTimestampMs = System.currentTimeMillis()
                 ),
                 excludeUserId = userId
@@ -274,6 +302,9 @@ fun Application.configureRouting() {
                 }
             }
         }
+
+        // ── Voice Token ───────────────────────────────────────────────────────
+        voiceTokenRoute()
 
         // ── YouTube / Playlist ────────────────────────────────────────────────
         youtubeRoutes(ytDlpService, json, sessionManager, playlistManager, broadcaster, downloadScope)

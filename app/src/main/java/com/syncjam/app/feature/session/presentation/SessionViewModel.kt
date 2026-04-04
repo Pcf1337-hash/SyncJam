@@ -193,8 +193,19 @@ class SessionViewModel @Inject constructor(
             is SessionEvent.RemoveFromQueue -> removeFromQueue(event.requestId)
             is SessionEvent.SendTrackEnded -> sendTrackEnded(event.trackId)
             is SessionEvent.Seek -> seek(event.positionMs)
-            is SessionEvent.ToggleMic -> _uiState.update { it.copy(isMicMuted = !it.isMicMuted) }
-            is SessionEvent.SetVolume -> _uiState.update { it.copy(musicVolume = event.volume) }
+            is SessionEvent.ToggleMic -> {
+                val newMuted = !_uiState.value.isMicMuted
+                _uiState.update { it.copy(isMicMuted = newMuted) }
+                // Music ducking: 25 % Lautstärke wenn Mikrofon aktiv (newMuted = false)
+                exoPlayer.volume = if (!newMuted) _uiState.value.musicVolume * 0.25f
+                                   else _uiState.value.musicVolume
+            }
+            is SessionEvent.SetVolume -> {
+                _uiState.update { it.copy(musicVolume = event.volume) }
+                // Ducking-Faktor beibehalten wenn Mic gerade aktiv
+                exoPlayer.volume = if (!_uiState.value.isMicMuted) event.volume * 0.25f
+                                   else event.volume
+            }
             is SessionEvent.DismissError -> _uiState.update { it.copy(error = null) }
             is SessionEvent.KickUser -> kickUser(event.targetUserId, event.reason)
             is SessionEvent.BanUser -> banUser(event.targetUserId)
@@ -315,7 +326,8 @@ class SessionViewModel @Inject constructor(
                             startedAt = System.currentTimeMillis(),
                             endedAt = null,
                             lastTrackTitle = null,
-                            lastTrackArtist = null
+                            lastTrackArtist = null,
+                            isHost = isHost
                         )
                     )
                 }
@@ -363,8 +375,10 @@ class SessionViewModel @Inject constructor(
         wsJob = viewModelScope.launch {
             val encodedName = URLEncoder.encode(displayName, "UTF-8")
             val pwParam = if (joinPassword.isNotEmpty()) "&password=${URLEncoder.encode(joinPassword, "UTF-8")}" else ""
+            val avatarUrl = sessionPrefs.getAvatarUrl()
+            val avatarParam = if (avatarUrl != null) "&avatarUrl=${URLEncoder.encode(avatarUrl, "UTF-8")}" else ""
             val url = "${Constants.SYNC_SERVER_BASE_URL}/ws/session/$code" +
-                "?userId=$userId&displayName=$encodedName&host=$isHost$pwParam"
+                "?userId=$userId&displayName=$encodedName&host=$isHost$pwParam$avatarParam"
             try {
                 httpClient.webSocket(url) {
                     _uiState.update { it.copy(isConnected = true) }
