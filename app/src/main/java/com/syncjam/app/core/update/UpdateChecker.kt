@@ -19,12 +19,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import com.syncjam.app.BuildConfig
 import java.io.File
 import java.io.InputStream
 import java.net.URL
 
 private const val GITHUB_REPO = "Pcf1337-hash/SyncJam"
-const val APP_VERSION = "1.7.0"
+val APP_VERSION: String get() = BuildConfig.VERSION_NAME
 
 @Serializable
 data class AppRelease(
