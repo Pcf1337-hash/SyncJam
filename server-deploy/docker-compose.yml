@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  syncjam-server:
+    image: syncjam-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: syncjam-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC
+      - YTDLP_DOWNLOAD_DIR=/app/downloads
+      - YTDLP_COOKIES_PATH=/app/cookies.txt
+    volumes:
+      # Persist downloaded YouTube tracks across restarts
+      - ytdlp_downloads:/app/downloads
+      # YouTube cookies for authenticated downloads
+      - /opt/syncjam/cookies.txt:/app/cookies.txt:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - syncjam-network
+
+  # Optional: Nginx Reverse Proxy mit SSL (fuer Produktion empfohlen)
+  # Starten mit: docker compose --profile production up -d
+  nginx:
+    image: nginx:alpine
+    container_name: syncjam-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - syncjam-server
+    networks:
+      - syncjam-network
+    profiles:
+      - production
+
+networks:
+  syncjam-network:
+    driver: bridge
+
+volumes:
+  ytdlp_downloads:

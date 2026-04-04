@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">84.252.121.74</domain>
+        <domain includeSubdomains="false">159.195.63.246</domain>
+        <domain includeSubdomains="true">luckysrv.de</domain>
         <domain includeSubdomains="false">10.0.2.2</domain>
-        <domain includeSubdomains="true">cus22253.vps.st-srv.eu</domain>
-        <domain includeSubdomains="false">2a0c:2500:571:5bc:63c7:4c96:3fd5:a0c8</domain>
     </domain-config>
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

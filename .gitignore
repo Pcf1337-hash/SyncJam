@@ -15,3 +15,15 @@ server/build/
 
 # Keystore (keep in repo for simplicity since it's self-signed)
 # syncjam-release.jks
+
+# Claude Code
+.claude/
+
+# Environment
+.env
+
+# Test music assets
+assets/musik/
+
+# Server JAR (built locally)
+server-deploy/syncjam-server.jar

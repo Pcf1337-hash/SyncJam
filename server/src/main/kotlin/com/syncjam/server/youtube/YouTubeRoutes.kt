@@ -197,7 +197,17 @@ fun Route.youtubeRoutes(
                 mapOf("error" to "Track not found. Call /youtube/add first.")
             )
 
+        val mimeType = when (file.extension.lowercase()) {
+            "mp3" -> "audio/mpeg"
+            "m4a" -> "audio/mp4"
+            "ogg" -> "audio/ogg"
+            "opus" -> "audio/opus"
+            "webm" -> "audio/webm"
+            else -> "audio/mpeg"
+        }
+        call.response.header(HttpHeaders.ContentType, mimeType)
         call.response.header(HttpHeaders.ContentDisposition, "inline")
+        call.response.header(HttpHeaders.AcceptRanges, "bytes")
         call.respondFile(file)
     }
 

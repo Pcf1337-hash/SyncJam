@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncjam.app.db.entity.SessionHistoryEntity
+import com.syncjam.app.core.update.UpdateDialog
 import com.syncjam.app.feature.library.presentation.LibraryScreen
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -74,6 +75,13 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    uiState.availableUpdate?.let { release ->
+        UpdateDialog(
+            release = release,
+            onDismiss = { viewModel.dismissUpdate() }
+        )
+    }
 
     Scaffold(
         bottomBar = {

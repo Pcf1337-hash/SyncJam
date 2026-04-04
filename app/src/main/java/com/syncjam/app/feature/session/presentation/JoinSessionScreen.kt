@@ -31,7 +31,7 @@ import com.syncjam.app.core.ui.components.SyncJamButton
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JoinSessionScreen(
-    onSessionJoined: (sessionId: String, sessionCode: String) -> Unit,
+    onSessionJoined: (sessionId: String, sessionCode: String, displayName: String) -> Unit,
     onBack: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel()
 ) {
@@ -43,7 +43,7 @@ fun JoinSessionScreen(
         val id = uiState.sessionId
         val code = uiState.sessionCode
         if (id != null && code.isNotEmpty()) {
-            onSessionJoined(id, code)
+            onSessionJoined(id, code, uiState.pendingDisplayName.ifBlank { displayName.ifBlank { "Gast" } })
         }
     }
 

@@ -1,8 +1,13 @@
 package com.syncjam.app.feature.session.presentation
 
+import android.content.ContentUris
+import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
 import com.syncjam.app.core.common.Constants
 import com.syncjam.app.sync.ParticipantInfo
 import com.syncjam.app.sync.QueueEntry
@@ -21,13 +26,16 @@ import io.ktor.http.contentType
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
@@ -40,22 +48,110 @@ import javax.inject.Inject
 class SessionViewModel @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json,
-    private val supabase: SupabaseClient
+    private val supabase: SupabaseClient,
+    private val exoPlayer: ExoPlayer
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SessionUiState())
     val uiState: StateFlow<SessionUiState> = _uiState.asStateFlow()
 
     private var wsJob: Job? = null
+    private var positionTickerJob: Job? = null
     private var currentSessionCode = ""
     private var currentUserId = ""
     private var currentDisplayName = ""
+    private var isHostSession = false
+
+    // ── Position Ticker ───────────────────────────────────────────────────────
+
+    private fun startPositionTicker() {
+        positionTickerJob?.cancel()
+        positionTickerJob = viewModelScope.launch {
+            while (true) {
+                delay(100)
+                _uiState.update { state ->
+                    if (!state.isPlaying || state.currentTrack == null) return@update state
+                    // Prefer ExoPlayer position if it's playing (more accurate)
+                    val exoPos = withContext(Dispatchers.Main) {
+                        if (exoPlayer.isPlaying) exoPlayer.currentPosition else -1L
+                    }
+                    val newPos = if (exoPos >= 0L) exoPos
+                    else (state.positionMs + 100L).coerceAtMost(state.currentTrack.durationMs)
+
+                    if (newPos >= state.currentTrack.durationMs && state.currentTrack.durationMs > 0) {
+                        launch { sendTrackEnded(state.currentTrack.id) }
+                    }
+                    state.copy(positionMs = newPos)
+                }
+            }
+        }
+    }
+
+    private fun stopPositionTicker() {
+        positionTickerJob?.cancel()
+        positionTickerJob = null
+    }
+
+    // ── ExoPlayer Control (main thread) ───────────────────────────────────────
+
+    /**
+     * Returns the playback URI for a track:
+     * - YouTube: the HTTP stream URL from the server
+     * - Local: content://media/external/audio/media/{id}
+     */
+    private fun getTrackUri(track: CurrentTrackUi): Uri? {
+        return when {
+            track.streamUrl != null -> Uri.parse(track.streamUrl)
+            else -> {
+                val numericId = track.id.toLongOrNull() ?: return null
+                ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, numericId)
+            }
+        }
+    }
+
+    private fun loadAndPlay(track: CurrentTrackUi, positionMs: Long) {
+        val uri = getTrackUri(track) ?: return
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                val mediaItem = MediaItem.fromUri(uri)
+                if (exoPlayer.currentMediaItem?.localConfiguration?.uri != uri) {
+                    exoPlayer.setMediaItem(mediaItem)
+                    exoPlayer.prepare()
+                }
+                exoPlayer.seekTo(positionMs)
+                exoPlayer.play()
+            } catch (e: Exception) {
+                Log.w(TAG, "ExoPlayer load failed for $uri: ${e.message}")
+            }
+        }
+    }
+
+    private fun pauseExo(track: CurrentTrackUi, positionMs: Long) {
+        viewModelScope.launch(Dispatchers.Main) {
+            exoPlayer.pause()
+            exoPlayer.seekTo(positionMs)
+        }
+    }
+
+    private fun seekExo(positionMs: Long) {
+        viewModelScope.launch(Dispatchers.Main) {
+            exoPlayer.seekTo(positionMs)
+        }
+    }
+
+    private fun stopExo() {
+        viewModelScope.launch(Dispatchers.Main) {
+            exoPlayer.stop()
+        }
+    }
+
+    // ── Event Handler ─────────────────────────────────────────────────────────
 
     fun onEvent(event: SessionEvent) {
         when (event) {
             is SessionEvent.CreateSession -> createSession(event.name, event.userId, event.displayName)
             is SessionEvent.JoinSession -> joinSession(event.code, event.userId, event.displayName)
-            is SessionEvent.ConnectToExistingSession -> connectToExistingSession(event.sessionCode, event.isHost)
+            is SessionEvent.ConnectToExistingSession -> connectToExistingSession(event.sessionCode, event.isHost, event.displayName)
             is SessionEvent.LeaveSession -> leaveSession()
             is SessionEvent.TogglePlayPause -> togglePlayPause()
             is SessionEvent.SendReaction -> sendReaction(event.emoji)
@@ -64,7 +160,7 @@ class SessionViewModel @Inject constructor(
             is SessionEvent.Vote -> vote(event.requestId, event.voteType)
             is SessionEvent.RemoveFromQueue -> removeFromQueue(event.requestId)
             is SessionEvent.SendTrackEnded -> sendTrackEnded(event.trackId)
-            is SessionEvent.Seek -> sendCommand(SyncCommand.Seek(positionMs = event.positionMs, serverTimestampMs = 0L))
+            is SessionEvent.Seek -> seek(event.positionMs)
             is SessionEvent.ToggleMic -> _uiState.update { it.copy(isMicMuted = !it.isMicMuted) }
             is SessionEvent.SetVolume -> _uiState.update { it.copy(musicVolume = event.volume) }
             is SessionEvent.DismissError -> _uiState.update { it.copy(error = null) }
@@ -78,9 +174,10 @@ class SessionViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: userId.ifBlank { UUID.randomUUID().toString() }
+                val resolvedName = displayName.ifBlank { "Host" }
                 val body = buildJsonObject {
                     put("hostId", resolvedUserId)
-                    put("hostName", displayName)
+                    put("hostName", resolvedName)
                     put("sessionName", name)
                 }
                 val response = httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/session") {
@@ -91,22 +188,20 @@ class SessionViewModel @Inject constructor(
                 val sessionId = responseBody["sessionId"]?.toString()?.trim('"') ?: ""
                 val sessionCode = responseBody["sessionCode"]?.toString()?.trim('"') ?: ""
 
-                currentSessionCode = sessionCode
-                currentUserId = resolvedUserId
-                currentDisplayName = displayName
-
+                // Store session info but do NOT connect WebSocket here.
+                // SessionScreen's ConnectToExistingSession will make the single connection.
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         sessionId = sessionId,
                         sessionCode = sessionCode,
                         hostId = resolvedUserId,
-                        currentUserId = resolvedUserId
+                        currentUserId = resolvedUserId,
+                        pendingDisplayName = resolvedName
                     )
                 }
-                connectWebSocket(sessionCode, resolvedUserId, displayName, isHost = true)
             } catch (e: Exception) {
-                Log.e(TAG,"createSession failed: ${e.message}", e)
+                Log.e(TAG, "createSession failed: ${e.message}", e)
                 _uiState.update { it.copy(isLoading = false, error = "Session konnte nicht erstellt werden: ${e.message}") }
             }
         }
@@ -117,35 +212,44 @@ class SessionViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: userId.ifBlank { UUID.randomUUID().toString() }
+                val resolvedName = displayName.ifBlank { "Gast" }
                 httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/session/$code") {}
-                currentSessionCode = code.uppercase()
-                currentUserId = resolvedUserId
-                currentDisplayName = displayName
 
+                // Store session info but do NOT connect WebSocket here.
+                // SessionScreen's ConnectToExistingSession will make the single connection.
                 _uiState.update {
-                    it.copy(isLoading = false, sessionId = code.uppercase(), sessionCode = code.uppercase(), currentUserId = resolvedUserId)
+                    it.copy(
+                        isLoading = false,
+                        sessionId = code.uppercase(),
+                        sessionCode = code.uppercase(),
+                        currentUserId = resolvedUserId,
+                        pendingDisplayName = resolvedName
+                    )
                 }
-                connectWebSocket(code.uppercase(), resolvedUserId, displayName, isHost = false)
             } catch (e: Exception) {
-                Log.e(TAG,"joinSession failed: ${e.message}", e)
+                Log.e(TAG, "joinSession failed: ${e.message}", e)
                 _uiState.update { it.copy(isLoading = false, error = "Session nicht gefunden — Code überprüfen") }
             }
         }
     }
 
-    private fun connectToExistingSession(code: String, isHost: Boolean) {
+    private fun connectToExistingSession(code: String, isHost: Boolean, displayName: String) {
+        if (currentSessionCode == code) return
         viewModelScope.launch {
             val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: UUID.randomUUID().toString()
-            val displayName = if (isHost) "Host" else "Gast"
+            val resolvedName = displayName.ifBlank { if (isHost) "Host" else "Gast" }
             currentSessionCode = code
             currentUserId = resolvedUserId
-            currentDisplayName = displayName
+            currentDisplayName = resolvedName
+            isHostSession = isHost
             _uiState.update { it.copy(sessionCode = code, currentUserId = resolvedUserId) }
-            connectWebSocket(code, resolvedUserId, displayName, isHost)
+            connectWebSocket(code, resolvedUserId, resolvedName, isHost)
         }
     }
 
     private fun leaveSession() {
+        stopPositionTicker()
+        stopExo()
         wsJob?.cancel()
         wsJob = null
         _uiState.update { SessionUiState() }
@@ -166,7 +270,6 @@ class SessionViewModel @Inject constructor(
                 httpClient.webSocket(url) {
                     _uiState.update { it.copy(isConnected = true) }
 
-                    // Heartbeat every 2s
                     launch {
                         while (true) {
                             delay(Constants.HEARTBEAT_INTERVAL_MS)
@@ -179,26 +282,24 @@ class SessionViewModel @Inject constructor(
                         }
                     }
 
-                    // Drain outgoing commands from sendCommand()
                     launch {
                         _outgoingCommands.collect { text ->
                             try { send(Frame.Text(text)) }
-                            catch (e: Exception) { Log.w(TAG,"WS send failed: ${e.message}") }
+                            catch (e: Exception) { Log.w(TAG, "WS send failed: ${e.message}") }
                         }
                     }
 
-                    // Receive loop
                     for (frame in incoming) {
                         if (frame is Frame.Text) {
                             runCatching { json.decodeFromString<SyncCommand>(frame.readText()) }
                                 .onSuccess { processCommand(it) }
-                                .onFailure { Log.w(TAG,"Failed to parse command: ${it.message}") }
+                                .onFailure { Log.w(TAG, "Failed to parse command: ${it.message}") }
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG,"WebSocket error in $code: ${e.message}", e)
-                _uiState.update { it.copy(isConnected = false, error = "Verbindung unterbrochen — reconnecting…") }
+                Log.e(TAG, "WebSocket error in $code: ${e.message}", e)
+                _uiState.update { it.copy(isConnected = false, error = "Verbindung unterbrochen…") }
                 delay(3000)
                 if (currentSessionCode.isNotEmpty()) {
                     connectWebSocket(currentSessionCode, currentUserId, currentDisplayName, isHost)
@@ -210,6 +311,12 @@ class SessionViewModel @Inject constructor(
     private fun processCommand(command: SyncCommand) {
         when (command) {
             is SyncCommand.StateSnapshot -> {
+                val filteredParticipants = command.participants
+                    .filter { it.userId != currentUserId }
+                    .distinctBy { it.userId }
+                    .map { it.toUi() }
+                    .toImmutableList()
+
                 _uiState.update { state ->
                     state.copy(
                         sessionId = command.sessionId,
@@ -218,13 +325,23 @@ class SessionViewModel @Inject constructor(
                         positionMs = command.positionMs,
                         isPlaying = command.isPlaying,
                         playlist = command.queue.mapIndexed { i, q -> q.toUi(i == 0 && command.isPlaying) }.toImmutableList(),
-                        participants = command.participants.map { it.toUi() }.toImmutableList(),
+                        participants = filteredParticipants,
                         participantCount = command.participants.size
                     )
+                }
+                val track = command.currentTrack?.toUi(Constants.SYNC_SERVER_HTTP_URL)
+                if (command.isPlaying) {
+                    if (track != null) loadAndPlay(track, command.positionMs)
+                    startPositionTicker()
+                } else {
+                    stopPositionTicker()
+                    if (track != null) pauseExo(track, command.positionMs)
                 }
             }
 
             is SyncCommand.PlaylistUpdate -> {
+                val wasEmpty = _uiState.value.playlist.isEmpty()
+                val wasPlaying = _uiState.value.isPlaying
                 val currentIdx = command.currentIndex
                 _uiState.update { state ->
                     state.copy(
@@ -235,22 +352,46 @@ class SessionViewModel @Inject constructor(
                             ?: state.currentTrack
                     )
                 }
+                // Auto-play first track: only host triggers play so all others receive a Play command
+                if (wasEmpty && command.tracks.isNotEmpty() && !wasPlaying && isHostSession) {
+                    val firstEntry = command.tracks.getOrNull(currentIdx) ?: command.tracks.first()
+                    val trackUi = firstEntry.trackInfo.toUi(Constants.SYNC_SERVER_HTTP_URL)
+                    _uiState.update { it.copy(isPlaying = true, currentTrack = trackUi, positionMs = 0L) }
+                    loadAndPlay(trackUi, 0L)
+                    startPositionTicker()
+                    sendCommand(SyncCommand.Play(
+                        trackId = trackUi.id,
+                        positionMs = 0L,
+                        serverTimestampMs = System.currentTimeMillis()
+                    ))
+                }
             }
 
             is SyncCommand.Play -> {
                 _uiState.update { it.copy(isPlaying = true, positionMs = command.positionMs) }
+                val track = _uiState.value.currentTrack
+                if (track != null) loadAndPlay(track, command.positionMs)
+                startPositionTicker()
             }
 
             is SyncCommand.Pause -> {
+                stopPositionTicker()
                 _uiState.update { it.copy(isPlaying = false, positionMs = command.positionMs) }
+                val track = _uiState.value.currentTrack
+                if (track != null) pauseExo(track, command.positionMs)
             }
 
             is SyncCommand.Seek -> {
                 _uiState.update { it.copy(positionMs = command.positionMs) }
+                seekExo(command.positionMs)
+                if (_uiState.value.isPlaying) startPositionTicker()
             }
 
             is SyncCommand.Skip -> {
+                stopPositionTicker()
+                stopExo()
                 _uiState.update { it.copy(positionMs = 0L, isPlaying = true) }
+                startPositionTicker()
             }
 
             is SyncCommand.YouTubeDownloadStarted -> {
@@ -260,22 +401,43 @@ class SessionViewModel @Inject constructor(
             }
 
             is SyncCommand.YouTubeDownloadReady -> {
-                // The PlaylistUpdate that follows will update the playlist; just clear download state
                 _uiState.update { it.copy(ytDownloadState = null) }
             }
 
             is SyncCommand.ParticipantJoined -> {
+                // Skip self — we're already in the UI as the current user
+                if (command.participant.userId == currentUserId) return
                 _uiState.update { state ->
                     val updated = (state.participants + command.participant.toUi())
                         .distinctBy { it.userId }.toImmutableList()
-                    state.copy(participants = updated, participantCount = updated.size)
+                    state.copy(participants = updated, participantCount = updated.size + 1)
                 }
             }
 
             is SyncCommand.ParticipantLeft -> {
                 _uiState.update { state ->
                     val updated = state.participants.filter { it.userId != command.userId }.toImmutableList()
-                    state.copy(participants = updated, participantCount = updated.size)
+                    state.copy(participants = updated, participantCount = (updated.size + 1).coerceAtLeast(1))
+                }
+            }
+
+            is SyncCommand.Reaction -> {
+                val durationMs = when {
+                    command.emoji.length <= 4 -> 2500L   // single emoji
+                    command.emoji.length <= 30 -> 4000L  // short text
+                    else -> 6000L                        // long text
+                }
+                val reaction = FloatingReactionUi(
+                    emoji = command.emoji,
+                    xFraction = (command.senderId.hashCode().and(0x7FFFFFFF) % 70 + 10) / 100f,
+                    durationMs = durationMs
+                )
+                _uiState.update { it.copy(floatingReactions = (it.floatingReactions + reaction).toImmutableList()) }
+                viewModelScope.launch {
+                    delay(durationMs + 200L)
+                    _uiState.update { state ->
+                        state.copy(floatingReactions = state.floatingReactions.filter { it.id != reaction.id }.toImmutableList())
+                    }
                 }
             }
 
@@ -283,7 +445,7 @@ class SessionViewModel @Inject constructor(
                 _uiState.update { it.copy(error = command.message) }
             }
 
-            else -> {} // NtpResponse, TrackTransferOffer, etc. handled elsewhere
+            else -> {}
         }
     }
 
@@ -305,7 +467,7 @@ class SessionViewModel @Inject constructor(
         if (currentSessionCode.isEmpty()) return
         viewModelScope.launch {
             try {
-                _uiState.update { it.copy(ytDownloadState = YtDownloadState.Downloading("", "Sending to server…")) }
+                _uiState.update { it.copy(ytDownloadState = YtDownloadState.Downloading("", "Wird gesendet…")) }
                 val body = buildJsonObject {
                     put("youtubeUrl", url)
                     put("sessionCode", currentSessionCode)
@@ -316,10 +478,9 @@ class SessionViewModel @Inject constructor(
                     contentType(ContentType.Application.Json)
                     setBody(body)
                 }
-                // Server broadcasts YouTubeDownloadStarted → processCommand clears the temp state
             } catch (e: Exception) {
-                Log.e(TAG,"addYouTubeTrack failed: ${e.message}", e)
-                _uiState.update { it.copy(ytDownloadState = YtDownloadState.Error("Download failed: ${e.message}")) }
+                Log.e(TAG, "addYouTubeTrack failed: ${e.message}", e)
+                _uiState.update { it.copy(ytDownloadState = YtDownloadState.Error("Download fehlgeschlagen: ${e.message}")) }
             }
         }
     }
@@ -336,16 +497,31 @@ class SessionViewModel @Inject constructor(
         sendCommand(SyncCommand.TrackEnded(trackId = trackId))
     }
 
+    private fun seek(positionMs: Long) {
+        _uiState.update { it.copy(positionMs = positionMs) }
+        seekExo(positionMs)
+        if (_uiState.value.isPlaying) startPositionTicker()
+        sendCommand(SyncCommand.Seek(positionMs = positionMs, serverTimestampMs = System.currentTimeMillis()))
+    }
+
     private fun togglePlayPause() {
         val state = _uiState.value
         if (state.isPlaying) {
-            sendCommand(SyncCommand.Pause(positionMs = state.positionMs, serverTimestampMs = 0L))
+            stopPositionTicker()
+            _uiState.update { it.copy(isPlaying = false) }
+            val track = state.currentTrack
+            if (track != null) pauseExo(track, state.positionMs)
+            sendCommand(SyncCommand.Pause(positionMs = state.positionMs, serverTimestampMs = System.currentTimeMillis()))
         } else {
+            val track = state.currentTrack ?: return
+            _uiState.update { it.copy(isPlaying = true) }
+            startPositionTicker()
+            loadAndPlay(track, state.positionMs)
             sendCommand(
                 SyncCommand.Play(
-                    trackId = state.currentTrack?.id ?: return,
+                    trackId = track.id,
                     positionMs = state.positionMs,
-                    serverTimestampMs = 0L
+                    serverTimestampMs = System.currentTimeMillis()
                 )
             )
         }
@@ -355,25 +531,19 @@ class SessionViewModel @Inject constructor(
         sendCommand(SyncCommand.Reaction(emoji = emoji, senderId = currentUserId, senderName = currentDisplayName))
     }
 
-    // ── Internal WebSocket Send ───────────────────────────────────────────────
+    // ── WebSocket Send ────────────────────────────────────────────────────────
 
     private fun sendCommand(command: SyncCommand) {
         viewModelScope.launch {
-            // The ws send is handled by the active websocket session — we use a shared channel.
-            // For simplicity, re-send via a new job that finds the active session.
-            // In production this would use a Channel<SyncCommand> fed into the WS loop.
             try {
-                val encoded = json.encodeToString(command)
-                // Stored frame queue pattern: commands are dispatched here
-                // (direct send from outside the websocket block requires the session reference)
-                _outgoingCommands.emit(encoded)
+                _outgoingCommands.emit(json.encodeToString(command))
             } catch (e: Exception) {
-                Log.w(TAG,"Failed to enqueue command: ${e.message}")
+                Log.w(TAG, "Failed to enqueue command: ${e.message}")
             }
         }
     }
 
-    private val _outgoingCommands = kotlinx.coroutines.flow.MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 64)
+    private val _outgoingCommands = MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 64)
 
     // ── Mapper Extensions ─────────────────────────────────────────────────────
 
@@ -414,6 +584,7 @@ class SessionViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        stopPositionTicker()
         wsJob?.cancel()
     }
 

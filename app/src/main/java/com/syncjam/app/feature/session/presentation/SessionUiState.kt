@@ -3,6 +3,7 @@ package com.syncjam.app.feature.session.presentation
 import androidx.compose.runtime.Immutable
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
+import java.util.UUID
 
 @Immutable
 data class SessionUiState(
@@ -12,6 +13,7 @@ data class SessionUiState(
     val sessionCode: String = "",
     val hostId: String = "",
     val currentUserId: String = "",
+    val pendingDisplayName: String = "",  // stored before WebSocket connects
     val currentTrack: CurrentTrackUi? = null,
     val positionMs: Long = 0L,
     val isPlaying: Boolean = false,
@@ -22,7 +24,8 @@ data class SessionUiState(
     val ytDownloadState: YtDownloadState? = null,
     val error: String? = null,
     val isMicMuted: Boolean = true,
-    val musicVolume: Float = 1f
+    val musicVolume: Float = 1f,
+    val floatingReactions: ImmutableList<FloatingReactionUi> = persistentListOf()
 )
 
 @Immutable
@@ -62,6 +65,14 @@ data class ParticipantUi(
     val isHost: Boolean
 )
 
+@Immutable
+data class FloatingReactionUi(
+    val id: String = UUID.randomUUID().toString(),
+    val emoji: String,
+    val xFraction: Float,  // 0f..1f horizontal position
+    val durationMs: Long = 2500L
+)
+
 sealed interface YtDownloadState {
     data class Downloading(val youtubeId: String, val title: String) : YtDownloadState
     data class Error(val message: String) : YtDownloadState
@@ -70,7 +81,7 @@ sealed interface YtDownloadState {
 sealed interface SessionEvent {
     data class CreateSession(val name: String, val userId: String, val displayName: String) : SessionEvent
     data class JoinSession(val code: String, val userId: String, val displayName: String) : SessionEvent
-    data class ConnectToExistingSession(val sessionCode: String, val isHost: Boolean) : SessionEvent
+    data class ConnectToExistingSession(val sessionCode: String, val isHost: Boolean, val displayName: String = "") : SessionEvent
     data object LeaveSession : SessionEvent
     data object TogglePlayPause : SessionEvent
     data class SendReaction(val emoji: String) : SessionEvent

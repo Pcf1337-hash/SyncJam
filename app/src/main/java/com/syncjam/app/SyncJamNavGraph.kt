@@ -18,7 +18,7 @@ import kotlinx.serialization.Serializable
 @Serializable sealed interface Route {
     @Serializable data object Login : Route
     @Serializable data object Home : Route
-    @Serializable data class Session(val sessionId: String, val sessionCode: String = "", val isHost: Boolean = false) : Route
+    @Serializable data class Session(val sessionId: String, val sessionCode: String = "", val isHost: Boolean = false, val displayName: String = "") : Route
     @Serializable data object CreateSession : Route
     @Serializable data class JoinSession(val code: String? = null) : Route
     @Serializable data object Queue : Route
@@ -44,8 +44,8 @@ fun SyncJamNavGraph() {
 
             composable<Route.CreateSession> {
                 CreateSessionScreen(
-                    onSessionCreated = { id, code ->
-                        navController.navigate(Route.Session(sessionId = id, sessionCode = code, isHost = true))
+                    onSessionCreated = { id, code, displayName ->
+                        navController.navigate(Route.Session(sessionId = id, sessionCode = code, isHost = true, displayName = displayName))
                     },
                     onBack = { navController.popBackStack() }
                 )
@@ -53,8 +53,8 @@ fun SyncJamNavGraph() {
 
             composable<Route.JoinSession> {
                 JoinSessionScreen(
-                    onSessionJoined = { id, code ->
-                        navController.navigate(Route.Session(sessionId = id, sessionCode = code, isHost = false))
+                    onSessionJoined = { id, code, displayName ->
+                        navController.navigate(Route.Session(sessionId = id, sessionCode = code, isHost = false, displayName = displayName))
                     },
                     onBack = { navController.popBackStack() }
                 )
@@ -65,7 +65,12 @@ fun SyncJamNavGraph() {
                 SessionScreen(
                     sessionCode = route.sessionCode,
                     isHost = route.isHost,
-                    onLeave = { navController.popBackStack() },
+                    displayName = route.displayName,
+                    onLeave = {
+                        navController.navigate(Route.Home) {
+                            popUpTo(Route.Home) { inclusive = false }
+                        }
+                    },
                     onOpenPlaylist = { navController.navigate(Route.Queue) }
                 )
             }

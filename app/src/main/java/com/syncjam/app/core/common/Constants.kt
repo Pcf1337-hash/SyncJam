@@ -1,11 +1,10 @@
 package com.syncjam.app.core.common
 
 object Constants {
-    // Production VPS IPv4 (port 80 via Caddy): ws://84.252.121.74
-    // Production VPS IPv6 (port 80 via Caddy): ws://[2a0c:2500:571:5bc:63c7:4c96:3fd5:a0c8]
+    // Production VPS Netcup (159.195.63.246, port 8080, keine Portblockierung)
     // Dev (emulator local): ws://10.0.2.2:8080
-    const val SYNC_SERVER_BASE_URL = "ws://84.252.121.74"
-    const val SYNC_SERVER_HTTP_URL = "http://84.252.121.74"
+    const val SYNC_SERVER_BASE_URL = "ws://159.195.63.246:8080"
+    const val SYNC_SERVER_HTTP_URL = "http://159.195.63.246:8080"
     const val SUPABASE_URL = "https://fvaxkleqbxuafbkymgmj.supabase.co"
     const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ2YXhrbGVxYnh1YWZia3ltZ21qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNTE5MTksImV4cCI6MjA5MDgyNzkxOX0.gPIcos74Ow51PWa4IHS9MoAhrs2TJT2QubJzKyQzF7k"
     const val LIVEKIT_URL = "wss://YOUR_LIVEKIT_URL"

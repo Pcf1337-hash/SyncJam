@@ -3,6 +3,7 @@ package com.syncjam.server.youtube
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -28,8 +29,21 @@ data class YtDlpInfo(
     val thumbnail: String?
 )
 
+@Serializable
+private data class YtDlpJsonOutput(
+    val id: String = "",
+    val title: String = "",
+    val uploader: String? = null,
+    val channel: String? = null,
+    val duration: Double = 0.0,
+    val thumbnail: String? = null
+)
+
+private val ytDlpJson = Json { ignoreUnknownKeys = true }
+
 class YtDlpService(
-    private val downloadDir: String = System.getenv("YTDLP_DOWNLOAD_DIR") ?: "/app/downloads"
+    private val downloadDir: String = System.getenv("YTDLP_DOWNLOAD_DIR") ?: "/app/downloads",
+    private val cookiesPath: String? = System.getenv("YTDLP_COOKIES_PATH")
 ) {
     private val logger = LoggerFactory.getLogger(YtDlpService::class.java)
 
@@ -37,14 +51,23 @@ class YtDlpService(
         File(downloadDir).mkdirs()
     }
 
+    /** Appends --cookies flag if a cookie file is configured and exists. */
+    private fun List<String>.withCookies(): List<String> {
+        val path = cookiesPath ?: return this
+        if (!File(path).exists()) return this
+        return this + listOf("--cookies", path)
+    }
+
     suspend fun getInfo(youtubeUrl: String): YtDlpInfo? = withContext(Dispatchers.IO) {
         try {
             extractYouTubeId(youtubeUrl) ?: return@withContext null
             val process = ProcessBuilder(
-                "yt-dlp",
-                "--no-playlist",
-                "--print", "%(id)s|%(title)s|%(uploader)s|%(duration)s|%(thumbnail)s",
-                youtubeUrl
+                listOf(
+                    "yt-dlp",
+                    "--no-playlist",
+                    "--print", "%(id)s|%(title)s|%(uploader)s|%(duration)s|%(thumbnail)s",
+                    youtubeUrl
+                ).withCookies()
             ).apply {
                 redirectErrorStream(true)
             }.start()
@@ -93,45 +116,69 @@ class YtDlpService(
 
             logger.info("Downloading: $youtubeUrl")
             val process = ProcessBuilder(
-                "yt-dlp",
-                "--no-playlist",
-                "--extract-audio",
-                "--audio-format", "mp3",
-                "--audio-quality", "192K",
-                "--embed-thumbnail",
-                "--add-metadata",
-                "--output", outputTemplate,
-                "--print-json",
-                youtubeUrl
+                listOf(
+                    "yt-dlp",
+                    "--no-playlist",
+                    "--extract-audio",
+                    "--audio-format", "mp3",
+                    "--audio-quality", "192K",
+                    "--embed-thumbnail",
+                    "--add-metadata",
+                    "--output", outputTemplate,
+                    "--print-json",
+                    youtubeUrl
+                ).withCookies()
             ).apply {
                 redirectErrorStream(false)
                 directory(File(downloadDir))
             }.start()
 
-            // Drain stdout (print-json output) to prevent blocking
-            process.inputStream.bufferedReader().readText()
+            // Drain stderr in background thread to prevent pipe buffer deadlock
+            var stderrContent = ""
+            val stderrThread = Thread { stderrContent = process.errorStream.bufferedReader().readText() }
+                .also { it.isDaemon = true; it.start() }
+
+            // Capture --print-json stdout output for metadata extraction
+            val jsonOutput = process.inputStream.bufferedReader().readText().trim()
             val exited = process.waitFor(300, TimeUnit.SECONDS) // 5 min timeout
+            stderrThread.join(5000)
+
             if (!exited) {
                 process.destroyForcibly()
                 logger.error("yt-dlp timeout for $youtubeUrl")
                 return@withContext null
             }
             if (process.exitValue() != 0) {
-                val err = process.errorStream.bufferedReader().readText()
-                logger.error("yt-dlp failed (${process.exitValue()}): $err")
+                logger.error("yt-dlp failed (${process.exitValue()}): $stderrContent")
                 return@withContext null
             }
 
             val downloadedFile = findExistingFile(ytId) ?: return@withContext null
-            val info = getInfo(youtubeUrl)
+
+            // Parse --print-json metadata directly (avoid a second yt-dlp call)
+            val parsedInfo: YtDlpJsonOutput? = runCatching {
+                jsonOutput.lines()
+                    .map { it.trim() }
+                    .filter { it.startsWith("{") }
+                    .firstNotNullOfOrNull { line ->
+                        runCatching { ytDlpJson.decodeFromString<YtDlpJsonOutput>(line) }.getOrNull()
+                    }
+            }.getOrNull()
+
+            val title = parsedInfo?.title?.takeIf { it.isNotBlank() } ?: ytId
+            val artist = parsedInfo?.let { it.uploader ?: it.channel }?.takeIf { it.isNotBlank() } ?: "YouTube"
+            val durationMs = parsedInfo?.duration?.let { (it * 1000.0).toLong() } ?: 0L
+            val thumbnailUrl = parsedInfo?.thumbnail?.takeIf { it.isNotBlank() && it != "none" }
+
+            logger.info("Parsed metadata for $ytId: title='$title', artist='$artist', duration=${durationMs}ms")
 
             YtDlpResult(
                 id = ytId,
-                title = info?.title ?: ytId,
-                artist = info?.uploader ?: "YouTube",
-                durationMs = (info?.duration ?: 0L) * 1000L,
+                title = title,
+                artist = artist,
+                durationMs = durationMs,
                 filePath = downloadedFile.absolutePath,
-                thumbnailUrl = info?.thumbnail,
+                thumbnailUrl = thumbnailUrl,
                 youtubeId = ytId,
                 fileSize = downloadedFile.length()
             )
