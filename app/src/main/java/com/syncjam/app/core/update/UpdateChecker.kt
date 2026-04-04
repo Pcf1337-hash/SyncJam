@@ -24,7 +24,7 @@ import java.io.InputStream
 import java.net.URL
 
 private const val GITHUB_REPO = "Pcf1337-hash/SyncJam"
-const val APP_VERSION = "1.2.0"
+const val APP_VERSION = "1.4.1"
 
 @Serializable
 data class AppRelease(
