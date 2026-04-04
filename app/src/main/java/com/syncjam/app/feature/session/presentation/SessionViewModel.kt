@@ -17,15 +17,21 @@ import com.syncjam.app.sync.SyncCommand
 import com.syncjam.app.sync.TrackInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.syncjam.app.core.auth.SessionPrefs
+import com.syncjam.app.db.dao.SessionHistoryDao
+import com.syncjam.app.db.entity.SessionHistoryEntity
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.storage.storage
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.websocket.webSocket
+import io.ktor.client.request.forms.formData
+import io.ktor.client.request.forms.submitFormWithBinaryData
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.websocket.Frame
 import io.ktor.websocket.readText
@@ -41,6 +47,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -54,7 +61,9 @@ class SessionViewModel @Inject constructor(
     private val httpClient: HttpClient,
     private val json: Json,
     private val supabase: SupabaseClient,
-    private val exoPlayer: ExoPlayer
+    private val exoPlayer: ExoPlayer,
+    private val sessionPrefs: SessionPrefs,
+    private val sessionHistoryDao: SessionHistoryDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SessionUiState())
@@ -197,7 +206,11 @@ class SessionViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: userId.ifBlank { UUID.randomUUID().toString() }
-                val resolvedName = displayName.ifBlank { "Host" }
+                val resolvedName = displayName.ifBlank {
+                    sessionPrefs.getDisplayName()
+                        ?: supabase.auth.currentUserOrNull()?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() }
+                        ?: "Host"
+                }
                 val body = buildJsonObject {
                     put("hostId", resolvedUserId)
                     put("hostName", resolvedName)
@@ -236,7 +249,11 @@ class SessionViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: userId.ifBlank { UUID.randomUUID().toString() }
-                val resolvedName = displayName.ifBlank { "Gast" }
+                val resolvedName = displayName.ifBlank {
+                    sessionPrefs.getDisplayName()
+                        ?: supabase.auth.currentUserOrNull()?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() }
+                        ?: "Gast"
+                }
                 httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/session/$code") {}
 
                 // Store session info but do NOT connect WebSocket here.
@@ -261,22 +278,64 @@ class SessionViewModel @Inject constructor(
         if (currentSessionCode == code) return
         viewModelScope.launch {
             val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: UUID.randomUUID().toString()
-            val resolvedName = displayName.ifBlank { if (isHost) "Host" else "Gast" }
+            val resolvedName = displayName.ifBlank {
+                sessionPrefs.getDisplayName()
+                    ?: supabase.auth.currentUserOrNull()?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() }
+                    ?: if (isHost) "Host" else "Gast"
+            }
             currentSessionCode = code
             currentUserId = resolvedUserId
             currentDisplayName = resolvedName
             isHostSession = isHost
             _uiState.update { it.copy(sessionCode = code, currentUserId = resolvedUserId) }
+            // Persist last session for quick rejoin
+            sessionPrefs.saveLastSession(code, isHost)
+            // Save to session history
+            viewModelScope.launch {
+                runCatching {
+                    sessionHistoryDao.upsert(
+                        SessionHistoryEntity(
+                            id = "${resolvedUserId}_$code",
+                            sessionCode = code,
+                            hostName = resolvedName,
+                            participantCount = 1,
+                            tracksPlayed = 0,
+                            startedAt = System.currentTimeMillis(),
+                            endedAt = null,
+                            lastTrackTitle = null,
+                            lastTrackArtist = null
+                        )
+                    )
+                }
+            }
             connectWebSocket(code, resolvedUserId, resolvedName, isHost)
         }
     }
 
     private fun leaveSession() {
+        val codeToClose = currentSessionCode
+        val userIdToClose = currentUserId
+        val tracksPlayed = _uiState.value.playlist.count { it.isCurrent }.coerceAtLeast(
+            _uiState.value.currentQueueIndex
+        )
+        val lastTrack = _uiState.value.currentTrack
         stopPositionTicker()
         stopExo()
         wsJob?.cancel()
         wsJob = null
-        if (isHostSession) deleteSessionFiles(currentSessionCode)
+        if (isHostSession) deleteSessionFiles(codeToClose)
+        sessionPrefs.clearLastSession()
+        viewModelScope.launch {
+            runCatching {
+                if (codeToClose.isNotEmpty()) {
+                    sessionHistoryDao.closeSession(
+                        id = "${userIdToClose}_$codeToClose",
+                        endedAt = System.currentTimeMillis(),
+                        tracksPlayed = tracksPlayed
+                    )
+                }
+            }
+        }
         _uiState.update { SessionUiState() }
         currentSessionCode = ""
         currentUserId = ""
@@ -500,10 +559,21 @@ class SessionViewModel @Inject constructor(
             try {
                 val audioBytes = readBytesFromUri(contentUri)
                 if (audioBytes != null) {
+                    val mimeType = try { context.contentResolver.getType(Uri.parse(contentUri)) } catch (_: Exception) { null }
                     val ext = getMimeTypeExt(contentUri)
-                    val path = "$currentSessionCode/$requestId.$ext"
-                    supabase.storage.from("session-tracks").upload(path, audioBytes) { upsert = true }
-                    streamUrl = supabase.storage.from("session-tracks").publicUrl(path)
+                    val fileName = "$requestId.$ext"
+                    val response = httpClient.submitFormWithBinaryData(
+                        url = "${Constants.SYNC_SERVER_HTTP_URL}/upload/$currentSessionCode",
+                        formData = formData {
+                            append("file", audioBytes, Headers.build {
+                                append(HttpHeaders.ContentDisposition, "filename=\"$fileName\"; name=\"file\"")
+                                append(HttpHeaders.ContentType, mimeType ?: "audio/mpeg")
+                            })
+                        }
+                    )
+                    val body = response.body<kotlinx.serialization.json.JsonObject>()
+                    val urlPath = body["url"]?.jsonPrimitive?.content
+                    if (urlPath != null) streamUrl = "${Constants.SYNC_SERVER_HTTP_URL}$urlPath"
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Audio upload failed: ${e.message}")
@@ -512,9 +582,19 @@ class SessionViewModel @Inject constructor(
                 if (albumArtUri != null) {
                     val artBytes = readBytesFromUri(albumArtUri)
                     if (artBytes != null) {
-                        val artPath = "$currentSessionCode/$requestId.jpg"
-                        supabase.storage.from("session-art").upload(artPath, artBytes) { upsert = true }
-                        albumArtUrl = supabase.storage.from("session-art").publicUrl(artPath)
+                        val artFileName = "$requestId.jpg"
+                        val response = httpClient.submitFormWithBinaryData(
+                            url = "${Constants.SYNC_SERVER_HTTP_URL}/upload/$currentSessionCode",
+                            formData = formData {
+                                append("file", artBytes, Headers.build {
+                                    append(HttpHeaders.ContentDisposition, "filename=\"$artFileName\"; name=\"file\"")
+                                    append(HttpHeaders.ContentType, "image/jpeg")
+                                })
+                            }
+                        )
+                        val body = response.body<kotlinx.serialization.json.JsonObject>()
+                        val urlPath = body["url"]?.jsonPrimitive?.content
+                        if (urlPath != null) albumArtUrl = "${Constants.SYNC_SERVER_HTTP_URL}$urlPath"
                     }
                 }
             } catch (e: Exception) {
@@ -561,20 +641,9 @@ class SessionViewModel @Inject constructor(
         if (sessionCode.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val tracks = supabase.storage.from("session-tracks").list(sessionCode)
-                if (tracks.isNotEmpty()) {
-                    supabase.storage.from("session-tracks").delete(tracks.map { "$sessionCode/${it.name}" })
-                }
+                httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/upload/$sessionCode/delete") {}
             } catch (e: Exception) {
-                Log.w(TAG, "deleteSessionFiles tracks failed: ${e.message}")
-            }
-            try {
-                val art = supabase.storage.from("session-art").list(sessionCode)
-                if (art.isNotEmpty()) {
-                    supabase.storage.from("session-art").delete(art.map { "$sessionCode/${it.name}" })
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "deleteSessionFiles art failed: ${e.message}")
+                Log.w(TAG, "deleteSessionFiles failed: ${e.message}")
             }
         }
     }

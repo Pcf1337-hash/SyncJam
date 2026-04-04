@@ -38,7 +38,10 @@ fun SyncJamNavGraph() {
             composable<Route.Home> {
                 HomeScreen(
                     onCreateSession = { navController.navigate(Route.CreateSession) },
-                    onJoinSession = { navController.navigate(Route.JoinSession()) }
+                    onJoinSession = { navController.navigate(Route.JoinSession()) },
+                    onRejoinSession = { code, isHost ->
+                        navController.navigate(Route.Session(sessionId = code, sessionCode = code, isHost = isHost))
+                    }
                 )
             }
 

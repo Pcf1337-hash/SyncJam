@@ -1,7 +1,6 @@
 package com.syncjam.app.feature.home.presentation
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +25,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -39,9 +39,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -62,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.syncjam.app.db.entity.SessionHistoryEntity
 import com.syncjam.app.core.update.UpdateDialog
 import com.syncjam.app.feature.library.presentation.LibraryScreen
+import com.syncjam.app.feature.profile.ProfileViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -71,6 +74,7 @@ import java.util.Locale
 fun HomeScreen(
     onCreateSession: () -> Unit,
     onJoinSession: () -> Unit,
+    onRejoinSession: (code: String, isHost: Boolean) -> Unit = { _, _ -> },
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -127,6 +131,7 @@ fun HomeScreen(
                 uiState = uiState,
                 onCreateSession = onCreateSession,
                 onJoinSession = onJoinSession,
+                onRejoinSession = onRejoinSession,
                 modifier = Modifier.padding(padding)
             )
             1 -> LibraryScreen(
@@ -134,7 +139,9 @@ fun HomeScreen(
                 onJoinSession = onJoinSession,
                 modifier = Modifier.padding(padding)
             )
-            2 -> ProfileTab(modifier = Modifier.padding(padding))
+            2 -> ProfileTab(
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 }
@@ -145,6 +152,7 @@ private fun DashboardTab(
     uiState: HomeUiState,
     onCreateSession: () -> Unit,
     onJoinSession: () -> Unit,
+    onRejoinSession: (code: String, isHost: Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -164,6 +172,45 @@ private fun DashboardTab(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        // Rejoin last session card
+        if (uiState.lastSessionCode != null) {
+            item {
+                ElevatedCard(
+                    onClick = { onRejoinSession(uiState.lastSessionCode, uiState.isLastSessionHost) },
+                    colors = CardDefaults.elevatedCardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PlayCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Weiterjammen",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                "Session ${uiState.lastSessionCode} fortsetzen",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Quick action cards
@@ -403,38 +450,72 @@ private fun SessionHistoryCard(session: SessionHistoryEntity) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProfileTab(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+private fun ProfileTab(
+    modifier: Modifier = Modifier,
+    profileViewModel: ProfileViewModel = hiltViewModel()
+) {
+    val state by profileViewModel.uiState.collectAsStateWithLifecycle()
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(16.dp))
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.Person,
-                contentDescription = null,
-                modifier = Modifier.size(48.dp),
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
+        item {
+            Spacer(Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                val initial = state.displayName.firstOrNull()?.uppercase() ?: "?"
+                Text(
+                    initial,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+        }
+
+        item {
+            Text(
+                state.email.ifBlank { "Gast" },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Text(
-            "Dein Profil",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            "Profilfunktionen folgen bald.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Anzeigename",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold
+                )
+                OutlinedTextField(
+                    value = state.displayName,
+                    onValueChange = { profileViewModel.onDisplayNameChange(it) },
+                    label = { Text("Dein Name") },
+                    singleLine = true,
+                    supportingText = {
+                        if (state.isSaved) Text("Gespeichert ✓", color = MaterialTheme.colorScheme.primary)
+                        else Text("Wird in Sessions als Anzeigename genutzt")
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                FilledTonalButton(
+                    onClick = { profileViewModel.saveDisplayName() },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = state.displayName.isNotBlank()
+                ) {
+                    Text("Speichern")
+                }
+            }
+        }
     }
 }

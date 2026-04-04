@@ -8,5 +8,8 @@ import com.syncjam.app.db.entity.SessionHistoryEntity
 data class HomeUiState(
     val recentSessions: List<SessionHistoryEntity> = emptyList(),
     val isLoading: Boolean = false,
-    val availableUpdate: AppRelease? = null
+    val availableUpdate: AppRelease? = null,
+    val lastSessionCode: String? = null,
+    val isLastSessionHost: Boolean = false,
+    val displayName: String = ""
 )

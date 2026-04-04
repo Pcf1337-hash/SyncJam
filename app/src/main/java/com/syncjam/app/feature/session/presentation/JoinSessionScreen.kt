@@ -37,13 +37,12 @@ fun JoinSessionScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var sessionCode by remember { mutableStateOf("") }
-    var displayName by remember { mutableStateOf("") }
 
     LaunchedEffect(uiState.sessionId, uiState.sessionCode) {
         val id = uiState.sessionId
         val code = uiState.sessionCode
         if (id != null && code.isNotEmpty()) {
-            onSessionJoined(id, code, uiState.pendingDisplayName.ifBlank { displayName.ifBlank { "Gast" } })
+            onSessionJoined(id, code, uiState.pendingDisplayName)
         }
     }
 
@@ -61,14 +60,6 @@ fun JoinSessionScreen(
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
             OutlinedTextField(
-                value = displayName,
-                onValueChange = { displayName = it },
-                label = { Text("Dein Name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
                 value = sessionCode,
                 onValueChange = { sessionCode = it.uppercase().take(6) },
                 label = { Text("Session-Code") },
@@ -84,7 +75,7 @@ fun JoinSessionScreen(
                         SessionEvent.JoinSession(
                             code = sessionCode,
                             userId = "",
-                            displayName = displayName.ifBlank { "Gast" }
+                            displayName = ""  // resolved from SessionPrefs in ViewModel
                         )
                     )
                 },

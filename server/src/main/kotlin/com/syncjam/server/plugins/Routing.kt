@@ -8,12 +8,15 @@ import com.syncjam.server.session.*
 import com.syncjam.server.youtube.YtDlpService
 import com.syncjam.server.youtube.youtubeRoutes
 import io.ktor.http.*
+import io.ktor.http.content.*
 import io.ktor.server.application.*
+import io.ktor.server.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
 import io.ktor.websocket.*
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +102,39 @@ fun Application.configureRouting() {
                 )
             )
         }
+
+        // ── File Upload / Static serving ─────────────────────────────────────
+        val uploadsRoot = File("/app/uploads").also { it.mkdirs() }
+
+        post("/upload/{sessionCode}") {
+            val sessionCode = call.parameters["sessionCode"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing sessionCode"))
+            val dir = File(uploadsRoot, sessionCode).also { it.mkdirs() }
+            var savedName: String? = null
+            val multipart = call.receiveMultipart()
+            multipart.forEachPart { part ->
+                if (part is PartData.FileItem && savedName == null) {
+                    val rawName = part.originalFileName?.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                        ?: "track_${System.currentTimeMillis()}"
+                    val file = File(dir, rawName)
+                    part.streamProvider().use { input -> file.outputStream().buffered().use { input.copyTo(it) } }
+                    savedName = rawName
+                }
+                part.dispose()
+            }
+            val name = savedName ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "No file"))
+            call.respond(mapOf("url" to "/uploads/$sessionCode/$name"))
+        }
+
+        post("/upload/{sessionCode}/delete") {
+            val sessionCode = call.parameters["sessionCode"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val dir = File(uploadsRoot, sessionCode)
+            if (dir.exists()) dir.deleteRecursively()
+            call.respond(HttpStatusCode.NoContent)
+        }
+
+        staticFiles("/uploads", uploadsRoot)
 
         // ── WebSocket Sync ────────────────────────────────────────────────────
         webSocket("/ws/session/{code}") {

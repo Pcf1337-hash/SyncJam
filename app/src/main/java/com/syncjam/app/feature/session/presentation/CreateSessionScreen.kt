@@ -48,14 +48,13 @@ fun CreateSessionScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var sessionName by remember { mutableStateOf("") }
-    var displayName by remember { mutableStateOf("") }
     var autoDeleteOption by remember { mutableStateOf(AutoDeleteOption.ONE_DAY) }
 
     LaunchedEffect(uiState.sessionId, uiState.sessionCode) {
         val id = uiState.sessionId
         val code = uiState.sessionCode
         if (id != null && code.isNotEmpty()) {
-            onSessionCreated(id, code, uiState.pendingDisplayName.ifBlank { displayName.ifBlank { "Host" } })
+            onSessionCreated(id, code, uiState.pendingDisplayName)
         }
     }
 
@@ -72,14 +71,6 @@ fun CreateSessionScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
-            OutlinedTextField(
-                value = displayName,
-                onValueChange = { displayName = it },
-                label = { Text("Dein Name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = sessionName,
                 onValueChange = { sessionName = it },
@@ -115,7 +106,7 @@ fun CreateSessionScreen(
                         SessionEvent.CreateSession(
                             name = sessionName.ifBlank { "Jam Session" },
                             userId = "",
-                            displayName = displayName.ifBlank { "Host" },
+                            displayName = "",  // resolved from SessionPrefs in ViewModel
                             autoDeleteAfterHours = autoDeleteOption.hours
                         )
                     )
