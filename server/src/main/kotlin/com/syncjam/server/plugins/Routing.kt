@@ -90,6 +90,24 @@ fun Application.configureRouting() {
         }
 
         /** GET /session/{code}/playlist — Full playlist state for a session. */
+        // ── Public session listing ─────────────────────────────────────────────
+        get("/sessions/public") {
+            val publicSessions = sessionManager.getAllSessions()
+                .filter { it.isPublic }
+                .map { s ->
+                    PublicSessionInfo(
+                        sessionCode = s.sessionCode,
+                        sessionName = s.sessionName,
+                        participantCount = s.clients.size,
+                        currentTrackTitle = s.currentTrack?.title,
+                        currentTrackArtist = s.currentTrack?.artist,
+                        isPasswordProtected = s.password.isNotEmpty(),
+                        createdAt = s.createdAt
+                    )
+                }
+            call.respond(publicSessions)
+        }
+
         get("/session/{code}/playlist") {
             val code = call.parameters["code"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing session code"))
@@ -148,13 +166,28 @@ fun Application.configureRouting() {
             }
             val displayName = call.request.queryParameters["displayName"] ?: "Unknown"
             val isHost = call.request.queryParameters["host"] == "true"
+            val password = call.request.queryParameters["password"] ?: ""
 
             val session = sessionManager.getSessionByCode(code) ?: run {
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Session not found: $code"))
                 return@webSocket
             }
 
-            val client = ConnectedClient(userId, displayName, isHost, this)
+            // Password check
+            if (session.password.isNotEmpty() && password != session.password) {
+                close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "WRONG_PASSWORD"))
+                return@webSocket
+            }
+
+            // Ban check
+            if (sessionManager.isBanned(code, userId)) {
+                close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "BANNED"))
+                return@webSocket
+            }
+
+            // Admin is re-recognized on reconnect
+            val isAdmin = userId == session.adminId
+            val client = ConnectedClient(userId, displayName, isHost || isAdmin, this)
             if (!sessionManager.addClient(code, client)) {
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Session is full (max 8 participants)"))
                 return@webSocket
@@ -358,6 +391,60 @@ private suspend fun handleCommand(
 
             is SyncCommand.ChatMessage -> {
                 broadcaster.broadcast(session, command)
+            }
+
+            // ── Admin Commands ────────────────────────────────────────────────
+            is SyncCommand.KickUser -> {
+                if (client.userId != session.adminId) return
+                val target = session.clients[command.targetUserId]
+                if (target != null) {
+                    broadcaster.sendTo(target, SyncCommand.YouWereKicked(command.reason, serverTs))
+                    try { target.session.close(CloseReason(CloseReason.Codes.NORMAL, "Kicked by admin")) } catch (_: Exception) {}
+                    sessionManager.removeClient(sessionCode, command.targetUserId)
+                    broadcaster.broadcast(session, SyncCommand.ParticipantLeft(command.targetUserId, serverTs))
+                }
+            }
+
+            is SyncCommand.BanUser -> {
+                if (client.userId != session.adminId) return
+                session.bannedUserIds.add(command.targetUserId)
+                val target = session.clients[command.targetUserId]
+                if (target != null) {
+                    broadcaster.sendTo(target, SyncCommand.YouWereKicked("Du wurdest gebannt.", serverTs))
+                    try { target.session.close(CloseReason(CloseReason.Codes.NORMAL, "Banned")) } catch (_: Exception) {}
+                    sessionManager.removeClient(sessionCode, command.targetUserId)
+                    broadcaster.broadcast(session, SyncCommand.ParticipantLeft(command.targetUserId, serverTs))
+                }
+            }
+
+            is SyncCommand.MuteParticipant -> {
+                if (client.userId != session.adminId) return
+                if (command.muted) session.mutedByAdmin.add(command.targetUserId)
+                else session.mutedByAdmin.remove(command.targetUserId)
+                val target = session.clients[command.targetUserId]
+                if (target != null) {
+                    broadcaster.sendTo(target, SyncCommand.MuteParticipant(command.targetUserId, command.muted, client.userId, serverTs))
+                }
+                broadcaster.broadcast(session, command.copy(serverTimestampMs = serverTs), excludeUserId = client.userId)
+            }
+
+            is SyncCommand.TransferHost -> {
+                if (client.userId != session.adminId && !client.isHost) return
+                // Notify everyone
+                broadcaster.broadcast(session, SyncCommand.AdminUpdate(command.newHostId, serverTs))
+            }
+
+            is SyncCommand.TransferAdmin -> {
+                if (client.userId != session.adminId) return
+                session.adminId = command.newAdminId
+                broadcaster.broadcast(session, SyncCommand.AdminUpdate(command.newAdminId, serverTs))
+            }
+
+            is SyncCommand.DirectMessage -> {
+                val target = session.clients[command.fromUserId]
+                    ?: session.clients.values.firstOrNull()
+                // relay to all — app will filter by targetUserId stored in message
+                broadcaster.broadcast(session, command, excludeUserId = client.userId)
             }
 
             // ── Track Transfer ────────────────────────────────────────────────

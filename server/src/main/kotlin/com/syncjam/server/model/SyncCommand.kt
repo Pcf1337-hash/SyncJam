@@ -27,7 +27,13 @@ data class QueueEntry(
 )
 
 @Serializable
-data class ParticipantInfo(val userId: String, val displayName: String, val avatarUrl: String?, val isHost: Boolean)
+data class ParticipantInfo(
+    val userId: String,
+    val displayName: String,
+    val avatarUrl: String?,
+    val isHost: Boolean,
+    val isAdmin: Boolean = false
+)
 
 @Serializable
 sealed interface SyncCommand {
@@ -151,4 +157,30 @@ sealed interface SyncCommand {
         val trackId: String,
         val serverTimestampMs: Long
     ) : SyncCommand
+
+    // ── Admin Commands ────────────────────────────────────────────────────────
+
+    @Serializable @SerialName("kick_user")
+    data class KickUser(val targetUserId: String, val reason: String = "", val serverTimestampMs: Long = 0L) : SyncCommand
+
+    @Serializable @SerialName("ban_user")
+    data class BanUser(val targetUserId: String, val serverTimestampMs: Long = 0L) : SyncCommand
+
+    @Serializable @SerialName("mute_participant")
+    data class MuteParticipant(val targetUserId: String, val muted: Boolean, val issuedBy: String, val serverTimestampMs: Long = 0L) : SyncCommand
+
+    @Serializable @SerialName("transfer_host")
+    data class TransferHost(val newHostId: String, val serverTimestampMs: Long = 0L) : SyncCommand
+
+    @Serializable @SerialName("transfer_admin")
+    data class TransferAdmin(val newAdminId: String, val serverTimestampMs: Long = 0L) : SyncCommand
+
+    @Serializable @SerialName("admin_update")
+    data class AdminUpdate(val adminId: String, val serverTimestampMs: Long = 0L) : SyncCommand
+
+    @Serializable @SerialName("you_were_kicked")
+    data class YouWereKicked(val reason: String = "", val serverTimestampMs: Long = 0L) : SyncCommand
+
+    @Serializable @SerialName("direct_message")
+    data class DirectMessage(val fromUserId: String, val fromName: String, val message: String, val serverTimestampMs: Long = 0L) : SyncCommand
 }

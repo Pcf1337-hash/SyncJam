@@ -23,9 +23,11 @@ import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -35,6 +37,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -47,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -75,10 +79,17 @@ fun HomeScreen(
     onCreateSession: () -> Unit,
     onJoinSession: () -> Unit,
     onRejoinSession: (code: String, isHost: Boolean) -> Unit = { _, _ -> },
+    onJoinPublicSession: (code: String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    // Refresh last session code and public sessions every time the screen appears
+    LaunchedEffect(Unit) {
+        viewModel.refreshLastSession()
+        viewModel.fetchPublicSessions()
+    }
 
     uiState.availableUpdate?.let { release ->
         UpdateDialog(
@@ -132,6 +143,7 @@ fun HomeScreen(
                 onCreateSession = onCreateSession,
                 onJoinSession = onJoinSession,
                 onRejoinSession = onRejoinSession,
+                onJoinPublicSession = onJoinPublicSession,
                 modifier = Modifier.padding(padding)
             )
             1 -> LibraryScreen(
@@ -153,6 +165,7 @@ private fun DashboardTab(
     onCreateSession: () -> Unit,
     onJoinSession: () -> Unit,
     onRejoinSession: (code: String, isHost: Boolean) -> Unit,
+    onJoinPublicSession: (code: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -301,6 +314,36 @@ private fun DashboardTab(
             }
         }
 
+        // Public sessions section
+        if (uiState.publicSessions.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Public,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Öffentliche Sessions",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+            items(
+                items = uiState.publicSessions,
+                key = { it.sessionCode }
+            ) { session ->
+                PublicSessionCard(session = session, onClick = { onJoinPublicSession(session.sessionCode) })
+            }
+        }
+
         item { Spacer(Modifier.height(8.dp)) }
     }
 }
@@ -440,6 +483,78 @@ private fun SessionHistoryCard(session: SessionHistoryEntity) {
                 )
                 Text(
                     "${session.tracksPlayed} Tracks",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PublicSessionCard(session: PublicSessionUi, onClick: () -> Unit) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        session.sessionName,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (session.isPasswordProtected) {
+                        Icon(Icons.Default.Lock, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                session.currentTrackTitle?.let { title ->
+                    Text(
+                        "$title${session.currentTrackArtist?.let { " · $it" } ?: ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Text(
+                    "Code: ${session.sessionCode}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    "${session.participantCount}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    if (session.participantCount == 1) "Person" else "Personen",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -1,5 +1,6 @@
 package com.syncjam.app.feature.session.presentation
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -26,7 +28,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +53,8 @@ fun CreateSessionScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var sessionName by remember { mutableStateOf("") }
     var autoDeleteOption by remember { mutableStateOf(AutoDeleteOption.ONE_DAY) }
+    var isPublic by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
 
     LaunchedEffect(uiState.sessionId, uiState.sessionCode) {
         val id = uiState.sessionId
@@ -98,6 +104,36 @@ fun CreateSessionScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Öffentliche Session", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "In der öffentlichen Liste anzeigen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = isPublic, onCheckedChange = { isPublic = it })
+            }
+            AnimatedVisibility(visible = isPublic) {
+                Column {
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Passwort (optional)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        supportingText = { Text("Leer lassen = keine Zugangsbeschränkung") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
             Spacer(Modifier.height(24.dp))
             SyncJamButton(
                 text = "Jam Session starten",
@@ -106,8 +142,10 @@ fun CreateSessionScreen(
                         SessionEvent.CreateSession(
                             name = sessionName.ifBlank { "Jam Session" },
                             userId = "",
-                            displayName = "",  // resolved from SessionPrefs in ViewModel
-                            autoDeleteAfterHours = autoDeleteOption.hours
+                            displayName = "",
+                            autoDeleteAfterHours = autoDeleteOption.hours,
+                            isPublic = isPublic,
+                            password = password
                         )
                     )
                 },

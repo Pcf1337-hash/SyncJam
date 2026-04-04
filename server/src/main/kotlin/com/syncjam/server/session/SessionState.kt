@@ -19,17 +19,24 @@ data class SessionState(
     val sessionName: String,
     val hostId: String,
     val createdAt: Long = System.currentTimeMillis(),
-    /** Unix ms when the session should be auto-deleted; null = never */
     val expiresAt: Long? = null,
+    val isPublic: Boolean = false,
+    /** Plaintext password; empty = no password */
+    val password: String = "",
+    /** User ID with admin privileges (kick/ban/mute). Starts as hostId, transferable. */
+    var adminId: String = hostId,
     var currentTrack: TrackInfo? = null,
     var positionMs: Long = 0L,
     var isPlaying: Boolean = false,
     var lastUpdateTime: Long = System.currentTimeMillis(),
     val queue: MutableList<QueueEntry> = mutableListOf(),
-    val clients: ConcurrentHashMap<String, ConnectedClient> = ConcurrentHashMap()
+    val clients: ConcurrentHashMap<String, ConnectedClient> = ConcurrentHashMap(),
+    val bannedUserIds: MutableSet<String> = mutableSetOf(),
+    /** UserIds the admin has server-muted (cannot speak) */
+    val mutedByAdmin: MutableSet<String> = mutableSetOf()
 ) {
     fun getParticipants(): List<ParticipantInfo> = clients.values.map {
-        ParticipantInfo(it.userId, it.displayName, null, it.isHost)
+        ParticipantInfo(it.userId, it.displayName, null, it.isHost, it.userId == adminId)
     }
 
     fun estimatedCurrentPosition(): Long {

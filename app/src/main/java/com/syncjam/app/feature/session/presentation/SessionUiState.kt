@@ -12,6 +12,7 @@ data class SessionUiState(
     val sessionId: String? = null,
     val sessionCode: String = "",
     val hostId: String = "",
+    val adminId: String = "",
     val currentUserId: String = "",
     val pendingDisplayName: String = "",  // stored before WebSocket connects
     val currentTrack: CurrentTrackUi? = null,
@@ -26,8 +27,12 @@ data class SessionUiState(
     val error: String? = null,
     val isMicMuted: Boolean = true,
     val musicVolume: Float = 1f,
-    val floatingReactions: ImmutableList<FloatingReactionUi> = persistentListOf()
-)
+    val floatingReactions: ImmutableList<FloatingReactionUi> = persistentListOf(),
+    val kickedReason: String? = null,
+    val directMessage: DirectMessageNotification? = null
+) {
+    val isCurrentUserAdmin: Boolean get() = adminId.isNotEmpty() && adminId == currentUserId
+}
 
 @Immutable
 data class CurrentTrackUi(
@@ -63,7 +68,9 @@ data class ParticipantUi(
     val userId: String,
     val displayName: String,
     val avatarUrl: String?,
-    val isHost: Boolean
+    val isHost: Boolean,
+    val isAdmin: Boolean = false,
+    val mutedByAdmin: Boolean = false
 )
 
 @Immutable
@@ -74,14 +81,27 @@ data class FloatingReactionUi(
     val durationMs: Long = 2500L
 )
 
+@Immutable
+data class DirectMessageNotification(
+    val fromName: String,
+    val message: String
+)
+
 sealed interface YtDownloadState {
     data class Downloading(val youtubeId: String, val title: String) : YtDownloadState
     data class Error(val message: String) : YtDownloadState
 }
 
 sealed interface SessionEvent {
-    data class CreateSession(val name: String, val userId: String, val displayName: String, val autoDeleteAfterHours: Int = 0) : SessionEvent
-    data class JoinSession(val code: String, val userId: String, val displayName: String) : SessionEvent
+    data class CreateSession(
+        val name: String,
+        val userId: String,
+        val displayName: String,
+        val autoDeleteAfterHours: Int = 0,
+        val isPublic: Boolean = false,
+        val password: String = ""
+    ) : SessionEvent
+    data class JoinSession(val code: String, val userId: String, val displayName: String, val password: String = "") : SessionEvent
     data class ConnectToExistingSession(val sessionCode: String, val isHost: Boolean, val displayName: String = "") : SessionEvent
     data object LeaveSession : SessionEvent
     data object TogglePlayPause : SessionEvent
@@ -102,4 +122,12 @@ sealed interface SessionEvent {
     data object ToggleMic : SessionEvent
     data class SetVolume(val volume: Float) : SessionEvent
     data object DismissError : SessionEvent
+    // Admin actions
+    data class KickUser(val targetUserId: String, val reason: String = "") : SessionEvent
+    data class BanUser(val targetUserId: String) : SessionEvent
+    data class MuteUser(val targetUserId: String, val muted: Boolean) : SessionEvent
+    data class TransferAdmin(val newAdminId: String) : SessionEvent
+    data class SendDirectMessage(val targetUserId: String, val message: String) : SessionEvent
+    data object DismissKicked : SessionEvent
+    data object DismissDirectMessage : SessionEvent
 }

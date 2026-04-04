@@ -41,6 +41,9 @@ fun SyncJamNavGraph() {
                     onJoinSession = { navController.navigate(Route.JoinSession()) },
                     onRejoinSession = { code, isHost ->
                         navController.navigate(Route.Session(sessionId = code, sessionCode = code, isHost = isHost))
+                    },
+                    onJoinPublicSession = { code ->
+                        navController.navigate(Route.JoinSession(code = code))
                     }
                 )
             }
@@ -55,11 +58,13 @@ fun SyncJamNavGraph() {
             }
 
             composable<Route.JoinSession> {
+                val route = it.toRoute<Route.JoinSession>()
                 JoinSessionScreen(
                     onSessionJoined = { id, code, displayName ->
                         navController.navigate(Route.Session(sessionId = id, sessionCode = code, isHost = false, displayName = displayName))
                     },
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    initialCode = route.code
                 )
             }
 

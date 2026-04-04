@@ -181,8 +181,8 @@ class SessionViewModel @Inject constructor(
 
     fun onEvent(event: SessionEvent) {
         when (event) {
-            is SessionEvent.CreateSession -> createSession(event.name, event.userId, event.displayName, event.autoDeleteAfterHours)
-            is SessionEvent.JoinSession -> joinSession(event.code, event.userId, event.displayName)
+            is SessionEvent.CreateSession -> createSession(event.name, event.userId, event.displayName, event.autoDeleteAfterHours, event.isPublic, event.password)
+            is SessionEvent.JoinSession -> joinSession(event.code, event.userId, event.displayName, event.password)
             is SessionEvent.ConnectToExistingSession -> connectToExistingSession(event.sessionCode, event.isHost, event.displayName)
             is SessionEvent.LeaveSession -> leaveSession()
             is SessionEvent.TogglePlayPause -> togglePlayPause()
@@ -196,12 +196,19 @@ class SessionViewModel @Inject constructor(
             is SessionEvent.ToggleMic -> _uiState.update { it.copy(isMicMuted = !it.isMicMuted) }
             is SessionEvent.SetVolume -> _uiState.update { it.copy(musicVolume = event.volume) }
             is SessionEvent.DismissError -> _uiState.update { it.copy(error = null) }
+            is SessionEvent.KickUser -> kickUser(event.targetUserId, event.reason)
+            is SessionEvent.BanUser -> banUser(event.targetUserId)
+            is SessionEvent.MuteUser -> muteUser(event.targetUserId, event.muted)
+            is SessionEvent.TransferAdmin -> transferAdmin(event.newAdminId)
+            is SessionEvent.SendDirectMessage -> sendDirectMessage(event.targetUserId, event.message)
+            is SessionEvent.DismissKicked -> { leaveSession() }
+            is SessionEvent.DismissDirectMessage -> _uiState.update { it.copy(directMessage = null) }
         }
     }
 
     // ── Session Lifecycle ─────────────────────────────────────────────────────
 
-    private fun createSession(name: String, userId: String, displayName: String, autoDeleteAfterHours: Int = 0) {
+    private fun createSession(name: String, userId: String, displayName: String, autoDeleteAfterHours: Int = 0, isPublic: Boolean = false, password: String = "") {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
@@ -216,6 +223,8 @@ class SessionViewModel @Inject constructor(
                     put("hostName", resolvedName)
                     put("sessionName", name)
                     put("autoDeleteAfterHours", autoDeleteAfterHours)
+                    put("isPublic", isPublic)
+                    put("password", password)
                 }
                 val response = httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/session") {
                     contentType(ContentType.Application.Json)
@@ -244,7 +253,9 @@ class SessionViewModel @Inject constructor(
         }
     }
 
-    private fun joinSession(code: String, userId: String, displayName: String) {
+    private var joinPassword = ""
+
+    private fun joinSession(code: String, userId: String, displayName: String, password: String = "") {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
@@ -255,6 +266,7 @@ class SessionViewModel @Inject constructor(
                         ?: "Gast"
                 }
                 httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/session/$code") {}
+                joinPassword = password
 
                 // Store session info but do NOT connect WebSocket here.
                 // SessionScreen's ConnectToExistingSession will make the single connection.
@@ -341,6 +353,7 @@ class SessionViewModel @Inject constructor(
         currentUserId = ""
         currentDisplayName = ""
         isHostSession = false
+        joinPassword = ""
     }
 
     // ── WebSocket Connection ──────────────────────────────────────────────────
@@ -349,8 +362,9 @@ class SessionViewModel @Inject constructor(
         wsJob?.cancel()
         wsJob = viewModelScope.launch {
             val encodedName = URLEncoder.encode(displayName, "UTF-8")
+            val pwParam = if (joinPassword.isNotEmpty()) "&password=${URLEncoder.encode(joinPassword, "UTF-8")}" else ""
             val url = "${Constants.SYNC_SERVER_BASE_URL}/ws/session/$code" +
-                "?userId=$userId&displayName=$encodedName&host=$isHost"
+                "?userId=$userId&displayName=$encodedName&host=$isHost$pwParam"
             try {
                 httpClient.webSocket(url) {
                     _uiState.update { it.copy(isConnected = true) }
@@ -406,6 +420,7 @@ class SessionViewModel @Inject constructor(
                     state.copy(
                         sessionId = command.sessionId,
                         hostId = command.hostId,
+                        adminId = command.participants.firstOrNull { it.isAdmin }?.userId ?: command.hostId,
                         currentTrack = command.currentTrack?.toUi(Constants.SYNC_SERVER_HTTP_URL),
                         positionMs = command.positionMs,
                         isPlaying = command.isPlaying,
@@ -535,6 +550,40 @@ class SessionViewModel @Inject constructor(
 
             is SyncCommand.Error -> {
                 _uiState.update { it.copy(error = command.message) }
+            }
+
+            is SyncCommand.AdminUpdate -> {
+                _uiState.update { it.copy(adminId = command.adminId) }
+            }
+
+            is SyncCommand.YouWereKicked -> {
+                stopPositionTicker()
+                stopExo()
+                wsJob?.cancel()
+                wsJob = null
+                _uiState.update { it.copy(kickedReason = command.reason.ifEmpty { "Du wurdest aus der Session entfernt." }) }
+            }
+
+            is SyncCommand.MuteParticipant -> {
+                if (command.targetUserId == currentUserId) {
+                    _uiState.update { it.copy(isMicMuted = command.muted) }
+                }
+                _uiState.update { state ->
+                    val updated = state.participants.map {
+                        if (it.userId == command.targetUserId) it.copy(mutedByAdmin = command.muted) else it
+                    }.toImmutableList()
+                    state.copy(participants = updated)
+                }
+            }
+
+            is SyncCommand.DirectMessage -> {
+                if (command.fromUserId != currentUserId) {
+                    _uiState.update { it.copy(directMessage = DirectMessageNotification(command.fromName, command.message)) }
+                    viewModelScope.launch {
+                        delay(6000L)
+                        _uiState.update { if (it.directMessage?.fromName == command.fromName && it.directMessage.message == command.message) it.copy(directMessage = null) else it }
+                    }
+                }
             }
 
             else -> {}
@@ -716,6 +765,28 @@ class SessionViewModel @Inject constructor(
         sendCommand(SyncCommand.Reaction(emoji = emoji, senderId = currentUserId, senderName = currentDisplayName))
     }
 
+    // ── Admin Actions ─────────────────────────────────────────────────────────
+
+    private fun kickUser(targetUserId: String, reason: String) {
+        sendCommand(SyncCommand.KickUser(targetUserId = targetUserId, reason = reason))
+    }
+
+    private fun banUser(targetUserId: String) {
+        sendCommand(SyncCommand.BanUser(targetUserId = targetUserId))
+    }
+
+    private fun muteUser(targetUserId: String, muted: Boolean) {
+        sendCommand(SyncCommand.MuteParticipant(targetUserId = targetUserId, muted = muted, issuedBy = currentUserId))
+    }
+
+    private fun transferAdmin(newAdminId: String) {
+        sendCommand(SyncCommand.TransferAdmin(newAdminId = newAdminId))
+    }
+
+    private fun sendDirectMessage(targetUserId: String, message: String) {
+        sendCommand(SyncCommand.DirectMessage(fromUserId = currentUserId, fromName = currentDisplayName, message = message))
+    }
+
     // ── WebSocket Send ────────────────────────────────────────────────────────
 
     private fun sendCommand(command: SyncCommand) {
@@ -768,7 +839,8 @@ class SessionViewModel @Inject constructor(
         userId = userId,
         displayName = displayName,
         avatarUrl = avatarUrl,
-        isHost = isHost
+        isHost = isHost,
+        isAdmin = isAdmin
     )
 
     override fun onCleared() {

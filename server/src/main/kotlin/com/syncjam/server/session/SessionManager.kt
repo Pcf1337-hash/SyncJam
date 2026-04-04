@@ -32,7 +32,10 @@ class SessionManager {
             sessionCode = sessionCode,
             sessionName = request.sessionName,
             hostId = request.hostId,
-            expiresAt = expiresAt
+            expiresAt = expiresAt,
+            isPublic = request.isPublic,
+            password = request.password,
+            adminId = request.hostId
         )
         sessions[sessionId] = state
         codeToId[sessionCode] = sessionId
@@ -60,6 +63,9 @@ class SessionManager {
         logger.info("Client ${client.userId} joined session $sessionCode")
         return true
     }
+
+    fun isBanned(sessionCode: String, userId: String): Boolean =
+        getSessionByCode(sessionCode)?.bannedUserIds?.contains(userId) == true
 
     fun removeClient(sessionCode: String, userId: String) {
         getSessionByCode(sessionCode)?.clients?.remove(userId)

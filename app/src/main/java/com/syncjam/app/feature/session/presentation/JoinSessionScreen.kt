@@ -23,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,10 +34,12 @@ import com.syncjam.app.core.ui.components.SyncJamButton
 fun JoinSessionScreen(
     onSessionJoined: (sessionId: String, sessionCode: String, displayName: String) -> Unit,
     onBack: () -> Unit,
+    initialCode: String? = null,
     viewModel: SessionViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var sessionCode by remember { mutableStateOf("") }
+    var sessionCode by remember { mutableStateOf(initialCode?.uppercase() ?: "") }
+    var password by remember { mutableStateOf("") }
 
     LaunchedEffect(uiState.sessionId, uiState.sessionCode) {
         val id = uiState.sessionId
@@ -67,6 +70,16 @@ fun JoinSessionScreen(
                 supportingText = { Text("6-stelliger Code vom Host") },
                 modifier = Modifier.fillMaxWidth()
             )
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Passwort (falls erforderlich)") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                supportingText = { Text("Leer lassen für Sessions ohne Passwort") },
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(Modifier.height(24.dp))
             SyncJamButton(
                 text = "Session beitreten",
@@ -75,7 +88,8 @@ fun JoinSessionScreen(
                         SessionEvent.JoinSession(
                             code = sessionCode,
                             userId = "",
-                            displayName = ""  // resolved from SessionPrefs in ViewModel
+                            displayName = "",
+                            password = password
                         )
                     )
                 },

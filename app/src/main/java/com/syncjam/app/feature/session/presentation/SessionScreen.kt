@@ -42,31 +42,40 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -126,6 +135,20 @@ fun SessionScreen(
                 )
             )
         }
+    }
+
+    // Kicked dialog
+    uiState.kickedReason?.let { reason ->
+        AlertDialog(
+            onDismissRequest = { viewModel.onEvent(SessionEvent.DismissKicked); onLeave() },
+            title = { Text("Aus Session entfernt") },
+            text = { Text(reason) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.onEvent(SessionEvent.DismissKicked); onLeave() }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -305,7 +328,11 @@ fun SessionScreen(
                 }
 
                 if (uiState.participants.isNotEmpty()) {
-                    ParticipantsSection(participants = uiState.participants)
+                    ParticipantsSection(
+                        participants = uiState.participants,
+                        isCurrentUserAdmin = uiState.isCurrentUserAdmin,
+                        onAdminEvent = { viewModel.onEvent(it) }
+                    )
                     Spacer(Modifier.height(8.dp))
                 }
 
@@ -329,6 +356,38 @@ fun SessionScreen(
 
         // Floating emoji reactions — rendered on top of everything
         FloatingReactionOverlay(reactions = uiState.floatingReactions)
+
+        // Direct message notification
+        uiState.directMessage?.let { dm ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .align(Alignment.TopCenter)
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Mail, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(20.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(dm.fromName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Text(dm.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        }
+                        TextButton(onClick = { viewModel.onEvent(SessionEvent.DismissDirectMessage) }) {
+                            Text("×", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -879,8 +938,18 @@ private fun ProgressSection(
 
 // ── Participants ──────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ParticipantsSection(participants: kotlinx.collections.immutable.ImmutableList<ParticipantUi>) {
+private fun ParticipantsSection(
+    participants: kotlinx.collections.immutable.ImmutableList<ParticipantUi>,
+    isCurrentUserAdmin: Boolean,
+    onAdminEvent: (SessionEvent) -> Unit
+) {
+    var selectedParticipant by remember { mutableStateOf<ParticipantUi?>(null) }
+    var dmTarget by remember { mutableStateOf<ParticipantUi?>(null) }
+    var dmText by remember { mutableStateOf("") }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
             "Teilnehmer",
@@ -895,7 +964,10 @@ private fun ParticipantsSection(participants: kotlinx.collections.immutable.Immu
             verticalAlignment = Alignment.CenterVertically
         ) {
             participants.take(5).forEach { participant ->
-                ParticipantChip(participant = participant)
+                ParticipantChip(
+                    participant = participant,
+                    onClick = if (isCurrentUserAdmin) ({ selectedParticipant = participant }) else null
+                )
             }
             if (participants.size > 5) {
                 Surface(
@@ -912,14 +984,123 @@ private fun ParticipantsSection(participants: kotlinx.collections.immutable.Immu
             }
         }
     }
+
+    // Admin action sheet
+    selectedParticipant?.let { target ->
+        ModalBottomSheet(
+            onDismissRequest = { selectedParticipant = null },
+            sheetState = sheetState
+        ) {
+            Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                Text(
+                    target.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+                )
+                HorizontalDivider()
+                AdminActionItem(
+                    icon = Icons.Default.Mail,
+                    label = "Privatnachricht senden",
+                    onClick = { dmTarget = target; selectedParticipant = null }
+                )
+                AdminActionItem(
+                    icon = if (target.mutedByAdmin) Icons.Default.Mic else Icons.Default.MicOff,
+                    label = if (target.mutedByAdmin) "Stummschaltung aufheben" else "Stummschalten",
+                    onClick = { onAdminEvent(SessionEvent.MuteUser(target.userId, !target.mutedByAdmin)); selectedParticipant = null }
+                )
+                AdminActionItem(
+                    icon = Icons.Default.AdminPanelSettings,
+                    label = "Admin-Rechte übertragen",
+                    onClick = { onAdminEvent(SessionEvent.TransferAdmin(target.userId)); selectedParticipant = null }
+                )
+                HorizontalDivider()
+                AdminActionItem(
+                    icon = Icons.Default.PersonOff,
+                    label = "Kicken",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = { onAdminEvent(SessionEvent.KickUser(target.userId)); selectedParticipant = null }
+                )
+                AdminActionItem(
+                    icon = Icons.Default.Block,
+                    label = "Bannen",
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = { onAdminEvent(SessionEvent.BanUser(target.userId)); selectedParticipant = null }
+                )
+            }
+        }
+    }
+
+    // DM dialog
+    dmTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { dmTarget = null; dmText = "" },
+            title = { Text("Nachricht an ${target.displayName}") },
+            text = {
+                OutlinedTextField(
+                    value = dmText,
+                    onValueChange = { if (it.length <= 200) dmText = it },
+                    label = { Text("Nachricht") },
+                    singleLine = false,
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onAdminEvent(SessionEvent.SendDirectMessage(target.userId, dmText)); dmTarget = null; dmText = "" },
+                    enabled = dmText.isNotBlank()
+                ) { Text("Senden") }
+            },
+            dismissButton = {
+                TextButton(onClick = { dmTarget = null; dmText = "" }) { Text("Abbrechen") }
+            }
+        )
+    }
 }
 
 @Composable
-private fun ParticipantChip(participant: ParticipantUi) {
+private fun AdminActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSurface,
+    onClick: () -> Unit
+) {
     Surface(
+        onClick = onClick,
+        color = androidx.compose.ui.graphics.Color.Transparent
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = tint)
+        }
+    }
+}
+
+@Composable
+private fun ParticipantChip(
+    participant: ParticipantUi,
+    onClick: (() -> Unit)? = null
+) {
+    val chipColor = when {
+        participant.isAdmin -> MaterialTheme.colorScheme.tertiaryContainer
+        participant.isHost -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val contentColor = when {
+        participant.isAdmin -> MaterialTheme.colorScheme.onTertiaryContainer
+        participant.isHost -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Surface(
+        onClick = onClick ?: {},
+        enabled = onClick != null,
         shape = RoundedCornerShape(16.dp),
-        color = if (participant.isHost) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceVariant
+        color = chipColor
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -930,27 +1111,25 @@ private fun ParticipantChip(participant: ParticipantUi) {
                 modifier = Modifier
                     .size(20.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (participant.isHost) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceContainerHighest
-                    ),
+                    .background(contentColor.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     participant.displayName.take(1).uppercase(),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (participant.isHost) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurface
+                    color = contentColor
                 )
             }
             Text(
                 participant.displayName,
                 style = MaterialTheme.typography.labelSmall,
-                color = if (participant.isHost) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = if (participant.isHost) FontWeight.SemiBold else FontWeight.Normal
+                color = contentColor,
+                fontWeight = if (participant.isHost || participant.isAdmin) FontWeight.SemiBold else FontWeight.Normal
             )
+            if (participant.mutedByAdmin) {
+                Icon(Icons.Default.MicOff, null, modifier = Modifier.size(12.dp), tint = contentColor.copy(alpha = 0.6f))
+            }
         }
     }
 }
