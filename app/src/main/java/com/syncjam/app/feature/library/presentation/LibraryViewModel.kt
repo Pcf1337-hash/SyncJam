@@ -40,6 +40,8 @@ class LibraryViewModel @Inject constructor(
         loadFromCache()
         observeFavorites()
         observePlaylists()
+        loadRecentlyPlayed()
+        loadMostPlayed()
     }
 
     fun scanLibrary() {
@@ -151,6 +153,20 @@ class LibraryViewModel @Inject constructor(
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────
+
+    private fun loadRecentlyPlayed() {
+        viewModelScope.launch {
+            val tracks = withContext(Dispatchers.IO) { dao.getRecentlyPlayedTracks() }
+            _uiState.update { it.copy(recentlyPlayed = tracks.map { e -> e.toUi() }.toImmutableList()) }
+        }
+    }
+
+    private fun loadMostPlayed() {
+        viewModelScope.launch {
+            val tracks = withContext(Dispatchers.IO) { dao.getMostPlayedTracks() }
+            _uiState.update { it.copy(mostPlayed = tracks.map { e -> e.toUi() }.toImmutableList()) }
+        }
+    }
 
     private fun loadFromCache() {
         viewModelScope.launch {

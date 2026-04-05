@@ -590,6 +590,55 @@ fun SessionScreen(
                 }
             }
         }
+
+        // Latenz-Debug-Overlay (nur in Debug-Builds, toggle via Long-Press oder Tap)
+        if (com.syncjam.app.BuildConfig.DEBUG) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 8.dp, bottom = 8.dp)
+            ) {
+                Surface(
+                    color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.75f),
+                    shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.clickable { viewModel.onEvent(SessionEvent.ToggleDebugOverlay) }
+                ) {
+                    if (uiState.showLatencyOverlay) {
+                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                            Text(
+                                text = "DEBUG",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.6f),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Latenz: ${uiState.currentLatencyMs} ms",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.inverseOnSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Session: ${uiState.sessionCode}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "${uiState.participants.size + 1} Teilnehmer",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = "⚡ ${uiState.currentLatencyMs}ms",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

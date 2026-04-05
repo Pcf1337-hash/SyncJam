@@ -158,4 +158,5 @@ sealed interface SessionEvent {
     data class RejectTrack(val requestId: String, val reason: String = "") : SessionEvent
     data class RenameSession(val newName: String) : SessionEvent
     data class ReorderQueue(val fromIndex: Int, val toIndex: Int) : SessionEvent
+    data object ToggleDebugOverlay : SessionEvent
 }

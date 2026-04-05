@@ -30,7 +30,10 @@ import kotlinx.serialization.Serializable
 }
 
 @Composable
-fun SyncJamNavGraph(startDestination: Route = Route.Login) {
+fun SyncJamNavGraph(
+    startDestination: Route = Route.Login,
+    isExpandedScreen: Boolean = false
+) {
     SyncJamTheme {
         val navController = rememberNavController()
         NavHost(navController = navController, startDestination = startDestination) {
@@ -63,7 +66,8 @@ fun SyncJamNavGraph(startDestination: Route = Route.Login) {
                     onJoinPublicSession = { code ->
                         navController.navigate(Route.JoinSession(code = code))
                     },
-                    onNavigateToSettings = { navController.navigate(Route.Settings) }
+                    onNavigateToSettings = { navController.navigate(Route.Settings) },
+                    isExpandedScreen = isExpandedScreen
                 )
             }
 

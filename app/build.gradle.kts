@@ -15,8 +15,8 @@ android {
         applicationId = "com.syncjam.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "2.5.0"
+        versionCode = 18
+        versionName = "2.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
@@ -146,6 +146,7 @@ dependencies {
     implementation(libs.kotlinx.collections.immutable)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.accompanist.permissions)
+    implementation(libs.material3.window.size)
 
     // Testing
     testImplementation(libs.junit)

@@ -47,4 +47,10 @@ interface LocalTrackDao {
 
     @Query("SELECT * FROM local_tracks WHERE remoteCoverUrl IS NULL AND albumArtUri IS NULL")
     suspend fun getTracksWithoutCover(): List<LocalTrackEntity>
+
+    @Query("SELECT * FROM local_tracks WHERE lastPlayed IS NOT NULL ORDER BY lastPlayed DESC LIMIT 10")
+    suspend fun getRecentlyPlayedTracks(): List<LocalTrackEntity>
+
+    @Query("SELECT * FROM local_tracks WHERE playCount > 0 ORDER BY playCount DESC LIMIT 10")
+    suspend fun getMostPlayedTracks(): List<LocalTrackEntity>
 }

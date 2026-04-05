@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -81,10 +83,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import kotlinx.collections.immutable.ImmutableList
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -92,6 +98,7 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
 import kotlinx.coroutines.launch
+import kotlinx.collections.immutable.persistentListOf
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -213,6 +220,12 @@ fun LibraryScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
+            RecentTracksCarousel(
+                recentlyPlayed = uiState.recentlyPlayed,
+                mostPlayed = uiState.mostPlayed,
+                onTrackSelected = onTrackSelected
+            )
+
             // Tab Row
             ScrollableTabRow(
                 selectedTabIndex = uiState.selectedTab.ordinal,
@@ -255,6 +268,91 @@ fun LibraryScreen(
                 LibraryTab.PLAYLISTS -> PlaylistsTab(
                     playlists = uiState.playlists,
                     onDeletePlaylist = { viewModel.deletePlaylist(it) }
+                )
+            }
+        }
+    }
+}
+
+// ── Recently Played / Most Played Carousel ───────────────────────────────────
+
+@Composable
+private fun RecentTracksCarousel(
+    recentlyPlayed: ImmutableList<TrackUi>,
+    mostPlayed: ImmutableList<TrackUi>,
+    onTrackSelected: (TrackUi) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (recentlyPlayed.isEmpty() && mostPlayed.isEmpty()) return
+
+    var selectedCarouselTab by remember { mutableStateOf(0) }
+    val tracks = if (selectedCarouselTab == 0) recentlyPlayed else mostPlayed
+
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selectedCarouselTab == 0,
+                onClick = { selectedCarouselTab = 0 },
+                label = { Text("Zuletzt gespielt") }
+            )
+            FilterChip(
+                selected = selectedCarouselTab == 1,
+                onClick = { selectedCarouselTab = 1 },
+                label = { Text("Am häufigsten") }
+            )
+        }
+        LazyRow(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(tracks, key = { it.id }, contentType = { "carousel_track" }) { track ->
+                CarouselTrackCard(track = track, onClick = { onTrackSelected(track) })
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+    }
+}
+
+@Composable
+private fun CarouselTrackCard(
+    track: TrackUi,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.width(120.dp),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column {
+            AsyncImage(
+                model = track.albumArtUri,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f),
+                contentScale = ContentScale.Crop,
+                error = rememberVectorPainter(Icons.Default.MusicNote),
+                placeholder = rememberVectorPainter(Icons.Default.MusicNote)
+            )
+            Column(Modifier.padding(8.dp)) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    track.artist,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }

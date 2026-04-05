@@ -2,6 +2,7 @@ package com.syncjam.app.feature.home.presentation
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -72,7 +73,12 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.QrCodeScanner
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -110,11 +116,27 @@ fun HomeScreen(
     onRejoinSession: (code: String, isHost: Boolean) -> Unit = { _, _ -> },
     onJoinPublicSession: (code: String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    isExpandedScreen: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val detectedClipboardCode by viewModel.detectedClipboardCode.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+
+    val qrScannerLauncher = rememberLauncherForActivityResult(
+        contract = ScanContract()
+    ) { result ->
+        val scannedCode = result.contents
+        if (scannedCode != null) {
+            val sessionCode = scannedCode
+                .substringAfterLast("/")
+                .trim()
+                .uppercase()
+            if (sessionCode.matches(Regex("[A-Z2-9]{6}"))) {
+                viewModel.onClipboardCodeDetected(sessionCode)
+            }
+        }
+    }
 
     val clipboardManager = LocalClipboardManager.current
     LaunchedEffect(Unit) {
@@ -148,76 +170,132 @@ fun HomeScreen(
         UpdateDialog(release = release, onDismiss = { viewModel.dismissUpdate() })
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    icon = { Icon(if (selectedTab == 0) Icons.Filled.Home else Icons.Outlined.Home, null) },
-                    label = { Text("Home") }
+    if (isExpandedScreen) {
+        // ── Tablet two-panel layout ───────────────────────────────────────────
+        Row(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f)) {
+                DashboardTab(
+                    uiState = uiState,
+                    onCreateSession = onCreateSession,
+                    onJoinSession = onJoinSession,
+                    onRejoinSession = onRejoinSession,
+                    onJoinPublicSession = onJoinPublicSession,
+                    onDeleteSession = { session ->
+                        viewModel.deleteSession(
+                            sessionId = session.id,
+                            sessionCode = session.sessionCode,
+                            userId = uiState.displayName
+                        )
+                    },
+                    onRenameSession = { session, newName ->
+                        viewModel.renameSession(
+                            sessionCode = session.sessionCode,
+                            newName = newName,
+                            hostId = uiState.displayName
+                        )
+                    },
+                    onClearAllSessions = { viewModel.clearAllSessions() },
+                    onScanQr = {
+                        val options = ScanOptions().apply {
+                            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            setPrompt("Session-Code scannen")
+                            setBeepEnabled(false)
+                            setBarcodeImageEnabled(false)
+                        }
+                        qrScannerLauncher.launch(options)
+                    }
                 )
-                NavigationBarItem(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1; viewModel.fetchPublicSessions() },
-                    icon = { Icon(if (selectedTab == 1) Icons.Filled.Public else Icons.Outlined.Public, null) },
-                    label = { Text("Sessions") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    icon = { Icon(if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic, null) },
-                    label = { Text("Bibliothek") }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == 3,
-                    onClick = { selectedTab = 3 },
-                    icon = { Icon(if (selectedTab == 3) Icons.Filled.Person else Icons.Outlined.Person, null) },
-                    label = { Text("Profil") }
+            }
+            VerticalDivider()
+            Box(modifier = Modifier.weight(1f)) {
+                LibraryScreen(
+                    onCreateSession = onCreateSession,
+                    onJoinSession = onJoinSession
                 )
             }
         }
-    ) { padding ->
-        when (selectedTab) {
-            0 -> DashboardTab(
-                uiState = uiState,
-                onCreateSession = onCreateSession,
-                onJoinSession = onJoinSession,
-                onRejoinSession = onRejoinSession,
-                onJoinPublicSession = onJoinPublicSession,
-                onDeleteSession = { session ->
-                    viewModel.deleteSession(
-                        sessionId = session.id,
-                        sessionCode = session.sessionCode,
-                        userId = uiState.displayName
+    } else {
+        // ── Phone tab layout ──────────────────────────────────────────────────
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        icon = { Icon(if (selectedTab == 0) Icons.Filled.Home else Icons.Outlined.Home, null) },
+                        label = { Text("Home") }
                     )
-                },
-                onRenameSession = { session, newName ->
-                    viewModel.renameSession(
-                        sessionCode = session.sessionCode,
-                        newName = newName,
-                        hostId = uiState.displayName
+                    NavigationBarItem(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1; viewModel.fetchPublicSessions() },
+                        icon = { Icon(if (selectedTab == 1) Icons.Filled.Public else Icons.Outlined.Public, null) },
+                        label = { Text("Sessions") }
                     )
-                },
-                onClearAllSessions = { viewModel.clearAllSessions() },
-                modifier = Modifier.padding(padding)
-            )
-            1 -> PublicSessionsTab(
-                sessions = uiState.publicSessions,
-                onJoin = onJoinPublicSession,
-                onRefresh = { viewModel.fetchPublicSessions() },
-                onCreateSession = onCreateSession,
-                modifier = Modifier.padding(padding)
-            )
-            2 -> LibraryScreen(
-                onCreateSession = onCreateSession,
-                onJoinSession = onJoinSession,
-                modifier = Modifier.padding(padding)
-            )
-            3 -> ProfileTab(
-                onNavigateToSettings = onNavigateToSettings,
-                modifier = Modifier.padding(padding)
-            )
+                    NavigationBarItem(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
+                        icon = { Icon(if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic, null) },
+                        label = { Text("Bibliothek") }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 3,
+                        onClick = { selectedTab = 3 },
+                        icon = { Icon(if (selectedTab == 3) Icons.Filled.Person else Icons.Outlined.Person, null) },
+                        label = { Text("Profil") }
+                    )
+                }
+            }
+        ) { padding ->
+            when (selectedTab) {
+                0 -> DashboardTab(
+                    uiState = uiState,
+                    onCreateSession = onCreateSession,
+                    onJoinSession = onJoinSession,
+                    onRejoinSession = onRejoinSession,
+                    onJoinPublicSession = onJoinPublicSession,
+                    onDeleteSession = { session ->
+                        viewModel.deleteSession(
+                            sessionId = session.id,
+                            sessionCode = session.sessionCode,
+                            userId = uiState.displayName
+                        )
+                    },
+                    onRenameSession = { session, newName ->
+                        viewModel.renameSession(
+                            sessionCode = session.sessionCode,
+                            newName = newName,
+                            hostId = uiState.displayName
+                        )
+                    },
+                    onClearAllSessions = { viewModel.clearAllSessions() },
+                    onScanQr = {
+                        val options = ScanOptions().apply {
+                            setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            setPrompt("Session-Code scannen")
+                            setBeepEnabled(false)
+                            setBarcodeImageEnabled(false)
+                        }
+                        qrScannerLauncher.launch(options)
+                    },
+                    modifier = Modifier.padding(padding)
+                )
+                1 -> PublicSessionsTab(
+                    sessions = uiState.publicSessions,
+                    onJoin = onJoinPublicSession,
+                    onRefresh = { viewModel.fetchPublicSessions() },
+                    onCreateSession = onCreateSession,
+                    modifier = Modifier.padding(padding)
+                )
+                2 -> LibraryScreen(
+                    onCreateSession = onCreateSession,
+                    onJoinSession = onJoinSession,
+                    modifier = Modifier.padding(padding)
+                )
+                3 -> ProfileTab(
+                    onNavigateToSettings = onNavigateToSettings,
+                    modifier = Modifier.padding(padding)
+                )
+            }
         }
     }
 }
@@ -232,6 +310,7 @@ private fun DashboardTab(
     onDeleteSession: (SessionHistoryEntity) -> Unit,
     onRenameSession: (SessionHistoryEntity, String) -> Unit,
     onClearAllSessions: () -> Unit,
+    onScanQr: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -319,6 +398,22 @@ private fun DashboardTab(
             }
         }
 
+        // ── QR-Code Beitritt ──────────────────────────────────────────────────
+        item {
+            OutlinedButton(
+                onClick = onScanQr,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    Icons.Default.QrCodeScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Mit QR-Code beitreten")
+            }
+        }
+
         // ── Session-Verlauf ───────────────────────────────────────────────────
         item {
             Row(
@@ -351,7 +446,11 @@ private fun DashboardTab(
             }
         }
 
-        if (uiState.recentSessions.isEmpty()) {
+        if (uiState.isLoading) {
+            items(count = 3, key = { "shimmer_$it" }, contentType = { "shimmer" }) {
+                ShimmerSessionCard(modifier = Modifier.fillMaxWidth())
+            }
+        } else if (uiState.recentSessions.isEmpty()) {
             item {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -477,6 +576,35 @@ private fun PublicSessionsTab(
                 }
             }
         }
+    }
+}
+
+// ── Shimmer Loading ───────────────────────────────────────────────────────────
+
+@Composable
+private fun ShimmerSessionCard(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val alpha by transition.animateFloat(
+        initialValue = 0.2f,
+        targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "shimmer_alpha"
+    )
+    Card(
+        modifier = modifier.height(72.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { this.alpha = alpha }
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
+        )
     }
 }
 

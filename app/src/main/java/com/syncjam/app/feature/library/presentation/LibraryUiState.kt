@@ -17,7 +17,9 @@ data class LibraryUiState(
     val isGridView: Boolean = false,
     val sortOption: SortOption = SortOption.TITLE,
     val selectedTab: LibraryTab = LibraryTab.TRACKS,
-    val isDownloadingCovers: Boolean = false
+    val isDownloadingCovers: Boolean = false,
+    val recentlyPlayed: ImmutableList<TrackUi> = persistentListOf(),
+    val mostPlayed: ImmutableList<TrackUi> = persistentListOf()
 )
 
 @Immutable

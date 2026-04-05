@@ -353,9 +353,18 @@ fun QueueScreen(
                         )
                     }
                     items(upNext, key = { it.requestId }, contentType = { "queue_track" }) { track ->
+                        val idx = upNext.indexOf(track)
+                        val isHost = uiState.hostId == uiState.currentUserId
                         QueueTrackItem(
                             entry = track,
                             currentUserId = uiState.currentUserId,
+                            isHost = isHost,
+                            onMoveUp = if (isHost && idx > 0) {{
+                                viewModel.onEvent(SessionEvent.ReorderQueue(idx, idx - 1))
+                            }} else null,
+                            onMoveDown = if (isHost && idx < upNext.size - 1) {{
+                                viewModel.onEvent(SessionEvent.ReorderQueue(idx, idx + 1))
+                            }} else null,
                             onUpvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, 1)) },
                             onDownvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, -1)) },
                             onRemove = { viewModel.onEvent(SessionEvent.RemoveFromQueue(track.requestId)) },

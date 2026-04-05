@@ -247,7 +247,17 @@ class SessionViewModel @Inject constructor(
                 }
             }
             is SessionEvent.RenameSession -> renameSession(event.newName)
-            is SessionEvent.ReorderQueue -> { /* handled locally — no server command yet */ }
+            is SessionEvent.ReorderQueue -> {
+                val list = _uiState.value.playlist.toMutableList()
+                if (event.fromIndex in list.indices && event.toIndex in list.indices) {
+                    val item = list.removeAt(event.fromIndex)
+                    list.add(event.toIndex, item)
+                    _uiState.update { it.copy(playlist = list.toImmutableList()) }
+                }
+            }
+            is SessionEvent.ToggleDebugOverlay -> {
+                _uiState.update { it.copy(showLatencyOverlay = !it.showLatencyOverlay) }
+            }
         }
     }
 
