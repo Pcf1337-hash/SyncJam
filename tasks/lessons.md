@@ -182,3 +182,14 @@ fun Track.toUi(): TrackUi = TrackUi(
 ---
 
 *Letzte Aktualisierung: Initialer Stand — noch keine Korrekturen.*
+
+### 2026-04-05 — v2.6.0 Modernisierung via Subagenten
+**Problem:** Viele parallele Features zu implementieren ohne Konflikte.
+**Root Cause:** Subagenten können keine Edit-Befehle ausführen wenn Permissions fehlen.
+**Fix:** Subagenten für Research/Read nutzen, kritische Edit-Befehle im Hauptagenten ausführen.
+**Regel:** Subagenten immer mit `run_in_background: true` für parallele unabhängige Tasks starten. Für dateiübergreifende Änderungen den Hauptagenten nutzen.
+
+### 2026-04-05 — WindowSizeClass Dependency
+**Problem:** `material3-window-size-class` braucht eigene Version in `libs.versions.toml`.
+**Fix:** `material3-windowsizeclass = "1.3.2"` in versions, `material3-window-size-class = { group = "androidx.compose.material3", name = "material3-window-size-class", version.ref = "material3-windowsizeclass" }` in libraries.
+**Regel:** Immer Version Catalog Alias verwenden, niemals direkte Strings in build.gradle.kts.

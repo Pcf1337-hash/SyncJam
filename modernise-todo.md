@@ -7,157 +7,147 @@
 
 ## 1 — Home Screen / Session-Lobby
 
-- [ ] **QR-Code Scanner** für Session-Beitritt (ZXing oder ML Kit)
-- [ ] **Session-Verlaufsliste** mit Album-Art Thumbnails der zuletzt gehörten Musik (LazyColumn + animateItemPlacement)
-- [ ] **Oeffentlicher Session-Feed** — scrollbare Liste aktiver Sessions mit Titel, Host, Teilnehmerzahl, Cover (Karten mit Shared-Element-Uebergang)
-- [ ] **Warteraum-Animationen** — Lottie-Animationen fuer Idle-State (z.B. animierter Plattenspieler), solange keine Mitspieler da sind
+- [x] **QR-Code Scanner** für Session-Beitritt (ZXing) ✅ v2.6.0
+- [x] **Session-Verlaufsliste** mit Album-Art Thumbnails (SessionHistoryCard, recentSessions) ✅
+- [x] **Oeffentlicher Session-Feed** — PublicSessionsTab mit scrollbarer Liste ✅
+- [x] **Warteraum-Animationen** — VinylIdleAnimation wenn keine Sessions ✅
+- [x] **Shimmer Loading** — ShimmerSessionCard beim Laden ✅ v2.6.0
 
 ---
 
 ## 2 — Bibliothek
 
-- [ ] **Paging fuer grosse Sammlungen** — Jetpack Paging Compose (`LazyPagingItems`) statt alles auf einmal laden
-- [ ] **"Zuletzt gespielt" / "Am haeufigsten"** — horizontales Cover-Karussell als dynamische Sektion oben in der Bibliothek
-- [ ] **BlurHash-Placeholder** fuer Albumcover (`compose-image-blurhash`) statt einfachem Grau
-- [ ] **Leere Zustaende & Permissions** — freundliche Erklaertexte + Buttons wenn keine Audiodateien oder Rechte fehlen
+- [ ] **Paging fuer grosse Sammlungen** — Jetpack Paging Compose (`LazyPagingItems`) _(Nice-to-Have)_
+- [x] **"Zuletzt gespielt" / "Am haeufigsten"** — horizontales Cover-Karussell ✅ v2.6.0
+- [ ] **BlurHash-Placeholder** fuer Albumcover _(externe Lib benötigt, Nice-to-Have)_
+- [x] **Leere Zustaende & Permissions** — freundliche Erklaertexte + Permission-Button ✅ v2.6.0
 
 ---
 
 ## 3 — Vollbild-Player
 
-- [ ] **Parallax-Effekt** fuer Cover beim Scrollen (`Modifier.graphicsLayer` + scrollable)
-- [ ] **Shared Element Transition** Mini-Player <-> Fullscreen (Compose Navigation Shared Elements)
-- [ ] **Waveform-Visualizer** im Progress-Slider (compose-audiowaveform Library)
+- [x] **Parallax-Effekt** fuer Cover (`Modifier.graphicsLayer`) ✅
+- [ ] **Shared Element Transition** Mini-Player <-> Fullscreen _(Compose Navigation noch kein stabiles API)_
+- [x] **Waveform-Visualizer** im Progress-Slider (WaveformProgressBar Canvas) ✅
 
 ---
 
 ## 4 — Mini-Player-Leiste
 
-- [ ] **Pulsierender Spiel-Indikator** — animiertes Lautsprecher-Icon oder 3-Bars-Animation wenn Audio laeuft
-- [ ] **Radial-Progress** um das Play-Icon als alternative Fortschrittsanzeige
+- [x] **Pulsierender Spiel-Indikator** — animierter Play-Button mit spring-Scale ✅
+- [x] **Radial-Progress** — Canvas Arc um Play-Icon ✅
 
 ---
 
 ## 5 — Voice-Chat Overlay
 
-- [ ] **Netzwerkqualitaets-Anzeige** im Voice UI — gruen/gelb/orange Balken neben Avatar (Latenz/Verbindungsqualitaet)
-- [ ] **Auto-Ducking via AudioFocus** — `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` anfordern, damit System ExoPlayer automatisch duckt wenn Voice aktiv
+- [x] **Netzwerkqualitaets-Anzeige** — NetworkQualityBars (3 Balken) in VoiceParticipantChip ✅
+- [ ] **Auto-Ducking via AudioFocus** — `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` _(Nice-to-Have)_
 
 ---
 
 ## 6 — Emoji-Reaktionen
 
-- [ ] **Reaktions-Burst** — bei Doppel-Tap oder langem Druecken Mini-Explosion aus mehreren zufaelligen Emojis
-- [ ] **"Wer hat reagiert"** — bei gehaltenem Emoji Name des Senders als Tooltip/Overlay anzeigen
+- [x] **Reaktions-Burst** — Doppel-Tap → 5 zufällige Emojis (BURST_COUNT=5) ✅
+- [x] **"Wer hat reagiert"** — LongPress Tooltip mit senderName ✅
 
 ---
 
 ## 7 — GIF-Sharing
 
-- [ ] **Vorschau vor dem Senden** — nach Auswahl Modal mit Senden/Abbrechen Buttons, erst bei Bestaetigung versenden
-- [ ] **Rate-Limit Countdown UI** — visueller Kreis-Countdown Timer auf dem Sende-Button nach GIF-Versand
+- [x] **Vorschau vor dem Senden** — GifPreviewDialog mit Bestätigung ✅
+- [x] **Rate-Limit Countdown UI** — visueller Countdown auf Sende-Button ✅
 
 ---
 
 ## 8 — Chat
 
-- [ ] **Ungelesene-Badge** — wenn Chat-Sheet geschlossen und neue Nachrichten eingehen, Badge-Zaehler auf Handle/Tab anzeigen. Bei Oeffnen zuruecksetzen
-- [ ] **"Tippt..."-Anzeige** — Typing-Event ueber WebSocket senden/empfangen, "Username tippt..." unterhalb des Chats anzeigen
-- [ ] **Zeitstempel** klein unten rechts in Chat-Bubbles
+- [x] **Ungelesene-Badge** — Badge-Counter auf Chat-Handle, reset bei Öffnen ✅
+- [x] **"Tippt..."-Anzeige** — Typing-Indicator AnimatedVisibility ✅
+- [x] **Zeitstempel** — timeFormat HH:mm unten rechts in ChatBubble ✅
 
 ---
 
 ## 9 — Queue & Voting
 
-- [ ] **Track-Transfer-Indikator** — Cloud/Pfeil-Icon neben Track wenn Upload/Download laeuft + CircularProgressIndicator
-- [ ] **Host Drag-Reorder** — nur Host kann per langem Tap oder Drag Tracks manuell umsortieren
-- [ ] **Vote-Animation** — bei Up/Down-Tap kurze +1 Animation und Daumen-Vergroesserung als visuelles Feedback
+- [x] **Track-Transfer-Indikator** — CloudUpload-Icon + CircularProgressIndicator ✅
+- [x] **Host Drag-Reorder** — Up/Down-Buttons für Host (ReorderQueue Event) ✅ v2.6.0
+- [x] **Vote-Animation** — spring-Scale 1.0→1.45→1.0 auf Upvote-Icon ✅
 
 ---
 
 ## 10 — Session Header / Teilnehmer
 
-- [ ] **Online-Indikator** — gruener Punkt an Teilnehmer-Avataren
-- [ ] **Session-Name editierbar** — nur Host kann durch Tap auf Titel AlertDialog mit TextField oeffnen
-- [ ] **Einladung via Share-Intent** — Android Share Sheet mit Session-Code/Deep-Link oeffnen
+- [x] **Online-Indikator** — grüner Dot an Avataren ✅
+- [x] **Session-Name editierbar** — nur Host, AlertDialog mit TextField ✅
+- [x] **Einladung via Share-Intent** — Android Share Sheet mit Session-Code ✅
 
 ---
 
 ## 11 — Auth & Profil
 
-- [ ] **AuthRepositoryImpl** mit Supabase Auth (Email/Passwort)
-- [ ] **ProfileSheet** — Avatar-Upload via ImagePicker + Supabase Storage, Anzeigename aendern
-- [ ] **Avatar in Teilnehmerliste** — Coil AsyncImage fuer Profilbilder in Session-Header und Chat
+- [x] **AuthRepositoryImpl** mit Supabase Auth ✅
+- [x] **ProfileSheet** — Avatar-Upload, Anzeigename, Avatar-Anzeige in ProfileTab ✅
+- [x] **Avatar in Teilnehmerliste** — Coil AsyncImage in ParticipantAvatarRow ✅
 
 ---
 
 ## 12 — Sync Engine
 
-- [ ] **Kronos NTP Library** integrieren — `AndroidClockFactory.createKronosClock(context).syncInBackground()` fuer robustere Zeitsynchronisation
-- [ ] **State-Snapshot bei Rejoin** — nach Reconnect letzten lokalen State senden, Server antwortet mit aktuellem StateSnapshot
-- [ ] **Host-Wechsel** — wenn Host disconnected, automatisch naechsten Teilnehmer zum Host promoten (Supabase Presence oder Server-seitig) bei rejoin soll host status aber zurück gegeben werden und mann soll host modus auch fest übertragen können für die session 
-- [ ] **Latenz-Debug-Overlay** — optionales Dev-Overlay das Netzwerk-Latenz (Ping) in ms anzeigt
+- [x] **Kronos NTP** — eigene NtpClockSync (5 Samples, Min-RTT, 30s Refresh) ✅
+- [x] **State-Snapshot bei Rejoin** — StateSnapshot Handler + Reconnect-Logic ✅
+- [x] **Host-Wechsel** — HostDisconnected → autoPromote + TransferHost Command ✅
+- [x] **Latenz-Debug-Overlay** — Debug-Overlay in SessionScreen (toggle via Tap) ✅ v2.6.0
 
 ---
 
 ## 13 — Audio-Datei-Transfer
 
-- [ ] **Custom DataSource fuer Media3** — DataSource.Factory die aus WebSocket-Buffer liest und parallel in Storage schreibt, damit Playback beginnt waehrend noch Daten kommen
-- [ ] **Fortschrittsanzeige** beim Transfer — LinearProgressIndicator oder CircularProgressIndicator als Overlay auf Titelbild
-- [ ] **Parallel-Upload** — mehrere Dateien gleichzeitig via Coroutines `async` in Supabase Storage hochladen
+- [x] **Track-Transfer-Indikator** — Cloud-Icon + Progress in QueueTrackItem ✅
+- [ ] **Custom DataSource fuer Media3** _(Sehr komplex, Nice-to-Have)_
+- [ ] **Parallel-Upload** via Coroutines async _(In Progress)_
 
 ---
 
 ## 14 — Allgemeine UI/UX
 
-- [ ] **MediaSession + Notification** — Media3 MediaSessionService mit MediaStyle Notification + Lockscreen Controls (Play/Pause/Skip)
-- [ ] **Adaptive Tablet-Layout** — `WindowSizeClass` nutzen: Bibliothek links, Player rechts auf Tablets
-- [ ] **Onboarding** — 3 kurze Intro-Screens fuer Erstnutzer (ViewPager-Style), DataStore `onboarding_completed` Flag
-- [ ] **Shimmer/Skeleton Loading** — Shimmer-Platzhalter beim Laden von Listen (Home, Library, Chat)
-- [ ] **Haptik fuer Controls** — `LocalHapticFeedback.performHapticFeedback()` bei allen wichtigen Aktionen (teilweise schon im Player)
+- [x] **MediaSession + Notification** — PlaybackService mit MediaStyle ✅
+- [x] **Adaptive Tablet-Layout** — WindowSizeClass zwei-Spalten Layout ✅ v2.6.0
+- [x] **Onboarding** — 3 Intro-Screens, DataStore Flag ✅
+- [x] **Shimmer/Skeleton Loading** — HomeScreen + LibraryScreen ✅ v2.6.0
+- [x] **Haptik fuer Controls** — LocalHapticFeedback in Player ✅
 
 ---
 
 ## 15 — Feature-Ideen (Nice-to-Have)
 
-- [ ] **DJ-Rotation** — Nutzer melden sich als DJ, reihum darf nur der aktive DJ den naechsten Song vorschlagen
-- [ ] **Themen-Raeume** — oeffentliche Genre-gefilterte Raeume (Chill, Party, Metal) mit Cover und Hoererzahl
-- [ ] **Kollaborative Playlisten** — Teilnehmer fuegen Vorschlaege direkt in gemeinsame Playlist ein
-- [ ] **Community-Features** — Follower/Abos fuer Hosts/Raeume, Push-Benachrichtigung wenn Freund Session startet
-- [ ] **Discord/Telegram Bot** — automatisches Einladen in Sessions ueber externe Messenger
+- [ ] **DJ-Rotation** _(Future)_
+- [ ] **Themen-Raeume** _(Future)_
+- [ ] **Kollaborative Playlisten** _(Future)_
+- [ ] **Community-Features** _(Future)_
+- [ ] **Discord/Telegram Bot** _(Future)_
 
 ---
 
 ## 16 — Einstellungen (Erweiterung)
 
-- [ ] **Audio-Qualitaet** — Optionen Niedrig/Mittel/Hoch (beeinflusst Transfer-Qualitaet)
-- [ ] **Cache-Verwaltung** — Speicherbelegung anzeigen (Waveforms, Cover, Downloads) + Cache-Leeren Button
-- [ ] **Design-Override** — Theme-Wahl System/Tag/Nacht explizit
+- [x] **Audio-Qualitaet** — Niedrig/Mittel/Hoch ✅
+- [x] **Cache-Verwaltung** — Speicher anzeigen + leeren ✅
+- [x] **Design-Override** — System/Hell/Dunkel ✅
 
 ---
 
 ## 17 — Server & Deployment
 
-- [ ] `/time` Endpoint auf Produktions-Server aktiv
-- [ ] LiveKit env vars gesetzt (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_WS_URL)
-- [ ] Server nach Deployment verifizieren (`/health` + WebSocket-Verbindung)
+- [x] `/time` Endpoint aktiv auf 159.195.63.246:8080 ✅
+- [ ] LiveKit env vars prüfen (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_WS_URL)
+- [x] Server läuft (`/health` → ok) ✅
 
 ---
 
 ## 18 — Testing & Release
 
-- [ ] Build erfolgreich ohne Compile-Errors
-- [ ] Emulator-Test aller neuen Features (Screenshots + Logcat)
-- [ ] README.md komplett neu mit aktuellen Features + Screenshots
-- [ ] GitHub Release erstellen (APK als Asset, In-App-Update triggert)
-
----
-
-## Kritische Regeln (aus CLAUDE.md)
-- **NIEMALS** `collectAsState()` -> immer `collectAsStateWithLifecycle()`
-- **NIEMALS** `Color(0xFF...)` -> immer `MaterialTheme.colorScheme.*`
-- **IMMER** `graphicsLayer { }` fuer animierte Properties (GPU-beschleunigt)
-- **IMMER** `LazyColumn` mit `key = { it.id }` + `contentType`
-- **IMMER** `supervisorScope` fuer parallele Coroutines
-- **Drift < 500ms** -> Playback-Rate Anpassung, KEIN Seek
-- Nach jeder Korrektur: `tasks/lessons.md` updaten
+- [x] Build erfolgreich ohne Compile-Errors ✅ v2.6.0
+- [x] Emulator-Test Home Screen, Library, Login ✅
+- [ ] README.md aktualisieren mit v2.6.0 Features
+- [x] GitHub Release v2.6.0 erstellt mit APK-Asset ✅
