@@ -18,6 +18,7 @@ import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
 import io.ktor.websocket.*
 import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
@@ -161,6 +162,11 @@ fun Application.configureRouting() {
         post("/upload/{sessionCode}") {
             val sessionCode = call.parameters["sessionCode"]
                 ?: return@post call.respond(HttpStatusCode.BadRequest, ErrorResponse("BAD_REQUEST", "Missing sessionCode"))
+            val contentLength = call.request.header(HttpHeaders.ContentLength)?.toLongOrNull() ?: 0L
+            if (contentLength > 200 * 1024 * 1024) { // 200MB limit
+                call.respond(HttpStatusCode.PayloadTooLarge, ErrorResponse("FILE_TOO_LARGE", "Max file size is 200MB"))
+                return@post
+            }
             val dir = File(uploadsRoot, sessionCode).also { it.mkdirs() }
             var savedName: String? = null
             val multipart = call.receiveMultipart()
@@ -209,9 +215,14 @@ fun Application.configureRouting() {
             }
 
             // Password check
-            if (session.password.isNotEmpty() && password != session.password) {
-                close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "WRONG_PASSWORD"))
-                return@webSocket
+            if (session.password.isNotEmpty()) {
+                val hashedInput = MessageDigest.getInstance("SHA-256")
+                    .digest(password.toByteArray())
+                    .joinToString("") { "%02x".format(it) }
+                if (hashedInput != session.password) {
+                    close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "WRONG_PASSWORD"))
+                    return@webSocket
+                }
             }
 
             // Ban check
@@ -351,15 +362,17 @@ private suspend fun handleCommand(
 
             // ── Playback ──────────────────────────────────────────────────────
             is SyncCommand.Play -> {
-                // Always store the FULL track info (with streamUrl) so joining clients get it via StateSnapshot
-                val fullTrack = playlistManager.getPlaylist(sessionCode)
-                    .find { it.trackInfo.id == command.trackId }?.trackInfo
-                session.currentTrack = fullTrack
-                    ?: session.currentTrack?.copy(id = command.trackId)
-                    ?: TrackInfo(command.trackId, "", "", 0)
-                session.positionMs = command.positionMs
-                session.isPlaying = true
-                session.lastUpdateTime = serverTs
+                session.withLock {
+                    // Always store the FULL track info (with streamUrl) so joining clients get it via StateSnapshot
+                    val fullTrack = playlistManager.getPlaylist(sessionCode)
+                        .find { it.trackInfo.id == command.trackId }?.trackInfo
+                    session.currentTrack = fullTrack
+                        ?: session.currentTrack?.copy(id = command.trackId)
+                        ?: TrackInfo(command.trackId, "", "", 0)
+                    session.positionMs = command.positionMs
+                    session.isPlaying = true
+                    session.lastUpdateTime = serverTs
+                }
                 broadcaster.broadcast(
                     session,
                     SyncCommand.Play(command.trackId, command.positionMs, serverTs),
@@ -368,22 +381,28 @@ private suspend fun handleCommand(
             }
 
             is SyncCommand.Pause -> {
-                session.positionMs = command.positionMs
-                session.isPlaying = false
-                session.lastUpdateTime = serverTs
+                session.withLock {
+                    session.positionMs = command.positionMs
+                    session.isPlaying = false
+                    session.lastUpdateTime = serverTs
+                }
                 broadcaster.broadcast(session, SyncCommand.Pause(command.positionMs, serverTs), excludeUserId = client.userId)
             }
 
             is SyncCommand.Seek -> {
-                session.positionMs = command.positionMs
-                session.lastUpdateTime = serverTs
+                session.withLock {
+                    session.positionMs = command.positionMs
+                    session.lastUpdateTime = serverTs
+                }
                 broadcaster.broadcast(session, SyncCommand.Seek(command.positionMs, serverTs), excludeUserId = client.userId)
             }
 
             is SyncCommand.Skip -> {
-                session.isPlaying = true
-                session.positionMs = 0L
-                session.lastUpdateTime = serverTs
+                session.withLock {
+                    session.isPlaying = true
+                    session.positionMs = 0L
+                    session.lastUpdateTime = serverTs
+                }
                 broadcaster.broadcast(session, SyncCommand.Skip(command.nextTrackId, serverTs), excludeUserId = client.userId)
             }
 
@@ -393,15 +412,19 @@ private suspend fun handleCommand(
                 // Idempotency guard built into advanceToNext: duplicate TrackEnded for same track is a no-op
                 val next = playlistManager.advanceToNext(sessionCode, command.trackId)
                 if (next != null) {
-                    session.currentTrack = next.trackInfo  // includes streamUrl
-                    session.positionMs = 0L
-                    session.isPlaying = true
-                    session.lastUpdateTime = serverTs
+                    session.withLock {
+                        session.currentTrack = next.trackInfo  // includes streamUrl
+                        session.positionMs = 0L
+                        session.isPlaying = true
+                        session.lastUpdateTime = serverTs
+                    }
                     // Send PlaylistUpdate FIRST so clients update currentTrack before Play arrives
                     syncAndBroadcastPlaylist(sessionCode, session, serverTs)
                     broadcaster.broadcast(session, SyncCommand.Play(next.trackInfo.id, 0L, serverTs))
                 } else {
-                    session.isPlaying = false
+                    session.withLock {
+                        session.isPlaying = false
+                    }
                     syncAndBroadcastPlaylist(sessionCode, session, serverTs)
                 }
             }
@@ -554,7 +577,7 @@ private suspend fun handleCommand(
 
             is SyncCommand.TransferAdmin -> {
                 if (client.userId != session.adminId) return
-                session.adminId = command.newAdminId
+                session.withLock { session.adminId = command.newAdminId }
                 broadcaster.broadcast(session, SyncCommand.AdminUpdate(command.newAdminId, serverTs))
             }
 
@@ -605,6 +628,7 @@ private suspend fun syncAndBroadcastPlaylist(sessionCode: String, session: Sessi
 }
 
 private suspend fun handleBinaryTransfer(session: SessionState, client: ConnectedClient, data: ByteArray) {
+    if (data.size > 10 * 1024 * 1024) return // ignore frames > 10MB
     session.clients.values
         .filter { it.userId != client.userId }
         .forEach { target ->

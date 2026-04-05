@@ -4,6 +4,8 @@ import com.syncjam.server.model.ParticipantInfo
 import com.syncjam.server.model.QueueEntry
 import com.syncjam.server.model.TrackInfo
 import io.ktor.websocket.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 
 data class ConnectedClient(
@@ -22,7 +24,7 @@ data class SessionState(
     val createdAt: Long = System.currentTimeMillis(),
     val expiresAt: Long? = null,
     val isPublic: Boolean = false,
-    /** Plaintext password; empty = no password */
+    /** SHA-256 hashed password; empty = no password */
     val password: String = "",
     /** User ID with admin privileges (kick/ban/mute). Starts as hostId, transferable. */
     var adminId: String = hostId,
@@ -38,6 +40,11 @@ data class SessionState(
     /** Pending track requests from non-hosts waiting for host approval. requestId → AddToQueue */
     val pendingApprovals: ConcurrentHashMap<String, com.syncjam.server.model.SyncCommand.AddToQueue> = ConcurrentHashMap()
 ) {
+    /** Mutex for synchronising mutations of mutable properties (currentTrack, positionMs, etc.). */
+    val mutex = Mutex()
+
+    suspend fun <T> withLock(block: () -> T): T = mutex.withLock { block() }
+
     fun getParticipants(): List<ParticipantInfo> = clients.values.map {
         ParticipantInfo(it.userId, it.displayName, it.avatarUrl, it.isHost, it.userId == adminId)
     }

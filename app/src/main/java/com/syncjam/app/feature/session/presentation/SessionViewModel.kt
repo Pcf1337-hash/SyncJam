@@ -454,7 +454,9 @@ class SessionViewModel @Inject constructor(
                 _uiState.update { it.copy(isConnected = false, error = "Verbindung unterbrochen…") }
                 if (currentSessionCode.isNotEmpty()) {
                     // Exponential backoff: 2s, 4s, 8s, 16s … capped at 30s
-                    val delayMs = minOf(2000L * (1L shl attempt.coerceAtMost(4)), 30_000L)
+                    val baseDelay = minOf(2000L * (1L shl attempt.coerceAtMost(4)), 30_000L)
+                    val jitter = (0..baseDelay / 4).random()
+                    val delayMs = baseDelay + jitter
                     delay(delayMs)
                     connectWebSocket(currentSessionCode, currentUserId, currentDisplayName, isHost, attempt + 1)
                 }
@@ -614,7 +616,11 @@ class SessionViewModel @Inject constructor(
                     xFraction = (command.senderId.hashCode().and(0x7FFFFFFF) % 70 + 10) / 100f,
                     durationMs = durationMs
                 )
-                _uiState.update { it.copy(floatingReactions = (it.floatingReactions + reaction).toImmutableList()) }
+                _uiState.update { state ->
+                    val current = state.floatingReactions
+                    if (current.size >= Constants.MAX_REACTIONS_ON_SCREEN) state
+                    else state.copy(floatingReactions = (current + reaction).toImmutableList())
+                }
                 viewModelScope.launch {
                     delay(durationMs + 200L)
                     _uiState.update { state ->
@@ -798,9 +804,19 @@ class SessionViewModel @Inject constructor(
         }
     }
 
-    private suspend fun readBytesFromUri(uriString: String): ByteArray? = withContext(Dispatchers.IO) {
+    private suspend fun readBytesFromUri(uriString: String, maxSizeBytes: Long = 200 * 1024 * 1024): ByteArray? = withContext(Dispatchers.IO) {
         try {
-            context.contentResolver.openInputStream(Uri.parse(uriString))?.use { it.readBytes() }
+            val uri = Uri.parse(uriString)
+            // Check file size before reading to prevent OOM
+            val fileSize = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            if (fileSize > maxSizeBytes) {
+                Log.w(TAG, "File too large ($fileSize bytes > $maxSizeBytes): $uriString")
+                withContext(Dispatchers.Main) {
+                    _uiState.update { it.copy(error = "Datei zu groß (max ${maxSizeBytes / 1024 / 1024}MB)") }
+                }
+                return@withContext null
+            }
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } catch (e: Exception) {
             Log.w(TAG, "readBytesFromUri failed for $uriString: ${e.message}")
             null

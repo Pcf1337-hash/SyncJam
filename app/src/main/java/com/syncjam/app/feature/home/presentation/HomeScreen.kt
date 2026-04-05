@@ -373,7 +373,7 @@ private fun DashboardTab(
                 }
             }
         } else {
-            items(items = uiState.recentSessions, key = { it.id }) { session ->
+            items(items = uiState.recentSessions, key = { it.id }, contentType = { "session_history" }) { session ->
                 SessionHistoryCard(
                     session = session,
                     onJoin = {
@@ -472,7 +472,7 @@ private fun PublicSessionsTab(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                items(items = sessions, key = { it.sessionCode }) { session ->
+                items(items = sessions, key = { it.sessionCode }, contentType = { "public_session" }) { session ->
                     PublicSessionCard(session = session, onClick = { onJoin(session.sessionCode) })
                 }
             }

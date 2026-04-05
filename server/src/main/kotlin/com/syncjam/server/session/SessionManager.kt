@@ -4,6 +4,7 @@ import com.syncjam.server.model.CreateSessionRequest
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 class SessionManager {
@@ -34,7 +35,7 @@ class SessionManager {
             hostId = request.hostId,
             expiresAt = expiresAt,
             isPublic = request.isPublic,
-            password = request.password,
+            password = hashPassword(request.password),
             adminId = request.hostId
         )
         sessions[sessionId] = state
@@ -78,17 +79,30 @@ class SessionManager {
 
     fun getAllSessions(): List<SessionState> = sessions.values.toList()
 
-    private fun pruneExpired() {
+    private suspend fun pruneExpired() {
         val now = System.currentTimeMillis()
         val expired = sessions.values.filter { s -> s.expiresAt != null && s.expiresAt <= now }
         expired.forEach { s ->
             // Disconnect any lingering clients
             s.clients.values.forEach { client ->
-                runCatching { runBlocking { client.session.close(CloseReason(CloseReason.Codes.NORMAL, "Session expired")) } }
+                runCatching { client.session.close(CloseReason(CloseReason.Codes.NORMAL, "Session expired")) }
             }
             removeSession(s.sessionId)
             logger.info("Session ${s.sessionCode} expired and was removed")
         }
+        val abandoned = sessions.values.filter { s ->
+            s.expiresAt == null && s.clients.isEmpty() && (now - s.createdAt) > 24 * 3_600_000L
+        }
+        abandoned.forEach { s ->
+            removeSession(s.sessionId)
+            logger.info("Abandoned session ${s.sessionCode} removed (no clients for 24h+)")
+        }
+    }
+
+    private fun hashPassword(password: String): String {
+        if (password.isEmpty()) return ""
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(password.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
     private fun generateId(): String = java.util.UUID.randomUUID().toString()

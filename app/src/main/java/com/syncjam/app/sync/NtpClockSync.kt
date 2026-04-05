@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,7 +31,7 @@ import javax.inject.Singleton
 @Singleton
 class NtpClockSync @Inject constructor() {
 
-    private var clockOffset: Long = 0L
+    private val clockOffset = AtomicLong(0L)
     private var syncJob: Job? = null
     private var httpClient: HttpClient? = null
 
@@ -47,7 +48,9 @@ class NtpClockSync @Inject constructor() {
             runCatching { measureSample(serverHttpUrl) }.getOrNull()
         }
         if (samples.isNotEmpty()) {
-            clockOffset = samples.minByOrNull { it.rtt }!!.offset
+            clockOffset.set(samples.minByOrNull { it.rtt }!!.offset)
+        } else {
+            android.util.Log.w("NtpClockSync", "All NTP samples failed — clock offset remains at ${clockOffset.get()}ms")
         }
     }
 
@@ -61,7 +64,7 @@ class NtpClockSync @Inject constructor() {
                     runCatching { measureSample(serverHttpUrl) }.getOrNull()
                 }
                 if (samples.isNotEmpty()) {
-                    clockOffset = samples.minByOrNull { it.rtt }!!.offset
+                    clockOffset.set(samples.minByOrNull { it.rtt }!!.offset)
                 }
             }
         }
@@ -76,22 +79,22 @@ class NtpClockSync @Inject constructor() {
     /** Reset offset (e.g. on disconnect). */
     fun reset() {
         stopPeriodicSync()
-        clockOffset = 0L
+        clockOffset.set(0L)
     }
 
     /**
      * Returns the current time corrected to server clock domain.
      * All sync commands should use this instead of [System.currentTimeMillis].
      */
-    fun getServerTime(): Long = System.currentTimeMillis() + clockOffset
+    fun getServerTime(): Long = System.currentTimeMillis() + clockOffset.get()
 
     /** Raw offset value — useful for diagnostics. */
-    fun getClockOffset(): Long = clockOffset
+    fun getClockOffset(): Long = clockOffset.get()
 
     // ── Manual offset apply (legacy / testing) ────────────────────────────────
 
     fun applyOffset(offset: Long) {
-        clockOffset = offset
+        clockOffset.set(offset)
     }
 
     fun calculateOffset(t1: Long, t2: Long, t3: Long, t4: Long): Long =

@@ -56,8 +56,8 @@ class DriftCorrector @Inject constructor() {
             }
             absDrift < Constants.DRIFT_LARGE_MS -> {
                 ensureNormalRate(player)
-                val targetPos = player.currentPosition - driftMs
-                if (targetPos >= 0L) player.seekTo(targetPos)
+                val targetPos = player.currentPosition + driftMs
+                if (targetPos in 0L..player.duration) player.seekTo(targetPos)
                 DriftAction.SEEK
             }
             else -> {

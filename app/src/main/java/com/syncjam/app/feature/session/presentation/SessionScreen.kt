@@ -1297,7 +1297,7 @@ private fun ParticipantChip(
                     modifier = Modifier
                         .size(24.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF4CAF50).copy(alpha = speakingBorderAlpha))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = speakingBorderAlpha))
                 )
                 // Avatar circle
                 Box(

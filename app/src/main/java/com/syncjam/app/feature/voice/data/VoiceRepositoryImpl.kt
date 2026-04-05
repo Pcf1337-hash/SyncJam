@@ -51,10 +51,13 @@ class VoiceRepositoryImpl @Inject constructor(
     // Repository-eigener Scope für Room-Event-Collection (unabhängig vom ViewModel-Lifecycle)
     private var roomScope: CoroutineScope? = null
 
+    // Singleton-scoped CoroutineScope für lang-lebende StateFlow-Derivate
+    private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     override val anyoneSpeaking: StateFlow<Boolean> = _voiceState
         .map { it.anyoneSpeaking }
         .stateIn(
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            scope = repositoryScope,
             started = SharingStarted.Eagerly,
             initialValue = false
         )
