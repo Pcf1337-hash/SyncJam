@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -322,18 +323,30 @@ private fun DashboardTab(
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                SectionHeader(icon = Icons.Default.History, title = "Letzte Sessions")
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Letzte Sessions",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
                 if (uiState.recentSessions.isNotEmpty()) {
-                    TextButton(onClick = onClearAllSessions) {
-                        Text(
-                            "Alle löschen",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Verlauf leeren",
+                        modifier = Modifier
+                            .size(20.dp)
+                            .clickable { onClearAllSessions() },
+                        tint = MaterialTheme.colorScheme.error
+                    )
                 }
             }
         }
