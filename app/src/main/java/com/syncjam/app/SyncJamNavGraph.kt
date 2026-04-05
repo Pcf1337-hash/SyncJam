@@ -12,6 +12,7 @@ import com.syncjam.app.feature.home.presentation.HomeScreen
 import com.syncjam.app.feature.session.presentation.CreateSessionScreen
 import com.syncjam.app.feature.session.presentation.JoinSessionScreen
 import com.syncjam.app.feature.session.presentation.SessionScreen
+import com.syncjam.app.feature.settings.presentation.SettingsScreen
 import com.syncjam.app.feature.voting.presentation.QueueScreen
 import kotlinx.serialization.Serializable
 
@@ -23,6 +24,7 @@ import kotlinx.serialization.Serializable
     @Serializable data class JoinSession(val code: String? = null) : Route
     @Serializable data object Queue : Route
     @Serializable data object Profile : Route
+    @Serializable data object Settings : Route
 }
 
 @Composable
@@ -30,6 +32,10 @@ fun SyncJamNavGraph() {
     SyncJamTheme {
         val navController = rememberNavController()
         NavHost(navController = navController, startDestination = Route.Login) {
+
+            composable<Route.Settings> {
+                SettingsScreen(onBack = { navController.popBackStack() })
+            }
 
             composable<Route.Login> {
                 LoginScreen(onLoginSuccess = { navController.navigate(Route.Home) })
@@ -44,7 +50,8 @@ fun SyncJamNavGraph() {
                     },
                     onJoinPublicSession = { code ->
                         navController.navigate(Route.JoinSession(code = code))
-                    }
+                    },
+                    onNavigateToSettings = { navController.navigate(Route.Settings) }
                 )
             }
 

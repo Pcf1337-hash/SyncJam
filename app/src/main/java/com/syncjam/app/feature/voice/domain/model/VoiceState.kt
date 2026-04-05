@@ -29,4 +29,19 @@ data class VoiceState(
         get() = connectionState == VoiceConnectionState.Connected ||
                 connectionState == VoiceConnectionState.StubMode ||
                 connectionState == VoiceConnectionState.Connecting
+
+    /**
+     * True wenn mindestens ein Teilnehmer gerade spricht.
+     * Wird vom SessionViewModel für Music Ducking genutzt:
+     * wenn true → player.volume = 0.25f
+     */
+    val anyoneSpeaking: Boolean
+        get() = participants.any { it.isSpeaking }
+
+    /**
+     * PTT ist immer aktiv — kein offenes Mikrofon, nur sprechen wenn Taste gedrückt.
+     * Verhindert Störgeräusche in allen Session-Größen.
+     */
+    val isPttRecommended: Boolean
+        get() = true
 }

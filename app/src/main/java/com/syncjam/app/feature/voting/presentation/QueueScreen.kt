@@ -358,7 +358,8 @@ fun QueueScreen(
                             currentUserId = uiState.currentUserId,
                             onUpvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, 1)) },
                             onDownvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, -1)) },
-                            onRemove = { viewModel.onEvent(SessionEvent.RemoveFromQueue(track.requestId)) }
+                            onRemove = { viewModel.onEvent(SessionEvent.RemoveFromQueue(track.requestId)) },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }
@@ -378,7 +379,8 @@ fun QueueScreen(
                             currentUserId = uiState.currentUserId,
                             onUpvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, 1)) },
                             onDownvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, -1)) },
-                            onRemove = { viewModel.onEvent(SessionEvent.RemoveFromQueue(track.requestId)) }
+                            onRemove = { viewModel.onEvent(SessionEvent.RemoveFromQueue(track.requestId)) },
+                            modifier = Modifier.animateItem()
                         )
                     }
                 }

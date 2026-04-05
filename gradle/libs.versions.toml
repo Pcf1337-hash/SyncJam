@@ -2,11 +2,11 @@
 kotlin = "2.2.0"
 agp = "8.9.2"
 compose-bom = "2025.05.01"
-media3 = "1.6.1"
+media3 = "1.9.0"
 hilt = "2.58"
 room = "2.7.1"
 ktor = "3.1.3"
-livekit = "2.9.0"
+livekit = "2.23.5"
 coil = "3.1.0"
 navigation = "2.8.9"
 lottie = "6.6.6"
@@ -17,9 +17,14 @@ kotlinxSerialization = "1.7.3"
 kotlinxCollectionsImmutable = "0.3.8"
 ksp = "2.2.0-2.0.2"
 logback = "1.5.18"
+palette = "1.0.0"
+paging = "3.3.6"
+kronos = "0.0.1-alpha10"
+zxing = "4.3.0"
 lifecycleVersion = "2.9.0"
 activityCompose = "1.10.1"
 coreKtx = "1.16.0"
+datastore = "1.1.4"
 
 [libraries]
 # AndroidX Core
@@ -78,6 +83,12 @@ navigation-compose = { group = "androidx.navigation", name = "navigation-compose
 # Other
 lottie-compose = { group = "com.airbnb.android", name = "lottie-compose", version.ref = "lottie" }
 materialkolor = { group = "com.materialkolor", name = "material-kolor", version.ref = "materialKolor" }
+palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
+paging-compose = { group = "androidx.paging", name = "paging-compose", version.ref = "paging" }
+paging-runtime = { group = "androidx.paging", name = "paging-runtime-ktx", version.ref = "paging" }
+kronos-android = { group = "com.lyft.kronos", name = "kronos-android", version.ref = "kronos" }
+zxing-android = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxing" }
+giphy-sdk = { group = "com.giphy.sdk", name = "ui", version.ref = "giphy" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-collections-immutable = { group = "org.jetbrains.kotlinx", name = "kotlinx-collections-immutable", version.ref = "kotlinxCollectionsImmutable" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
@@ -113,6 +124,9 @@ supabase-postgrest = { group = "io.github.jan-tennert.supabase", name = "postgre
 supabase-auth = { group = "io.github.jan-tennert.supabase", name = "auth-kt" }
 supabase-realtime = { group = "io.github.jan-tennert.supabase", name = "realtime-kt" }
 supabase-storage = { group = "io.github.jan-tennert.supabase", name = "storage-kt" }
+
+# DataStore
+datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

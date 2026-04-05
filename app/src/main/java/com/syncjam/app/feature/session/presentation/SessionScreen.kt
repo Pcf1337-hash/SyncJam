@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -82,6 +83,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -1023,13 +1025,41 @@ private fun ParticipantsSection(
     var dmText by remember { mutableStateOf("") }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            "Teilnehmer",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontWeight = FontWeight.SemiBold
+    // ── Session timer ──────────────────────────────────────────────────────────
+    var elapsedSeconds by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            elapsedSeconds++
+        }
+    }
+    val timeString = remember(elapsedSeconds) {
+        "%02d:%02d:%02d".format(
+            elapsedSeconds / 3600,
+            (elapsedSeconds % 3600) / 60,
+            elapsedSeconds % 60
         )
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Teilnehmer",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
+            )
+            // Session elapsed timer
+            Text(
+                timeString,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1196,7 +1226,7 @@ private fun ParticipantChip(
                 // Avatar circle
                 Box(
                     modifier = Modifier
-                        .size(if (participant.isSpeaking) 20.dp else 20.dp)
+                        .size(20.dp)
                         .clip(CircleShape)
                         .background(contentColor.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
@@ -1216,6 +1246,18 @@ private fun ParticipantChip(
                             color = contentColor
                         )
                     }
+                }
+                // Host crown badge — top-centre above the avatar
+                if (participant.isHost) {
+                    Icon(
+                        imageVector = Icons.Default.WorkspacePremium,
+                        contentDescription = "Host",
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier
+                            .size(10.dp)
+                            .align(Alignment.TopCenter)
+                            .offset(y = (-4).dp)
+                    )
                 }
             }
             Text(

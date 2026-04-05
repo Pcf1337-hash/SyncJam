@@ -25,11 +25,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.syncjam.app.feature.voice.domain.model.ConnectionQuality
 import com.syncjam.app.feature.voice.domain.model.VoiceParticipant
 
 /**
  * Kleiner Chip der einen Voice-Teilnehmer anzeigt:
- * Avatar + sprechender Indikator + Name + Stumm-Badge.
+ * Avatar + pulsierender Speaking-Indikator + Name + Stumm-Badge + Netzwerkqualitäts-Balken.
  */
 @Composable
 fun VoiceParticipantChip(
@@ -76,15 +77,20 @@ fun VoiceParticipantChip(
             Spacer(Modifier.width(7.dp))
 
             Column {
-                Text(
-                    text = if (participant.isLocal) "${participant.displayName} (Du)"
-                           else participant.displayName,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (participant.isLocal) "${participant.displayName} (Du)"
+                               else participant.displayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    NetworkQualityBars(quality = participant.connectionQuality)
+                }
                 if (participant.isMuted) {
                     Spacer(Modifier.height(1.dp))
                     Row(
@@ -105,6 +111,64 @@ fun VoiceParticipantChip(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 3-Balken Netzwerkqualitäts-Indikator (wie WLAN-Symbol).
+ *
+ * Balken-Höhen: 4dp / 7dp / 10dp (klein → mittel → groß).
+ * Farben:
+ *   EXCELLENT → alle 3 Balken in [MaterialTheme.colorScheme.tertiary] (grün im Dark Theme)
+ *   GOOD      → 2 Balken in [MaterialTheme.colorScheme.secondary] (gelb/amber)
+ *   POOR      → 1 Balken in [MaterialTheme.colorScheme.error] (rot)
+ *   LOST      → alle Balken in [MaterialTheme.colorScheme.error] (rot, ausgeblendet)
+ *   UNKNOWN   → alle Balken in [MaterialTheme.colorScheme.outline] (grau)
+ */
+@Composable
+private fun NetworkQualityBars(
+    quality: ConnectionQuality,
+    modifier: Modifier = Modifier
+) {
+    val activeColor = when (quality) {
+        ConnectionQuality.EXCELLENT -> MaterialTheme.colorScheme.tertiary
+        ConnectionQuality.GOOD      -> MaterialTheme.colorScheme.secondary
+        ConnectionQuality.POOR,
+        ConnectionQuality.LOST      -> MaterialTheme.colorScheme.error
+        ConnectionQuality.UNKNOWN   -> MaterialTheme.colorScheme.outline
+    }
+    val inactiveColor = MaterialTheme.colorScheme.outlineVariant
+
+    // Anzahl aktiver (farbiger) Balken
+    val activeBars = when (quality) {
+        ConnectionQuality.EXCELLENT -> 3
+        ConnectionQuality.GOOD      -> 2
+        ConnectionQuality.POOR      -> 1
+        ConnectionQuality.LOST      -> 0
+        ConnectionQuality.UNKNOWN   -> 0
+    }
+
+    val barHeights = listOf(4.dp, 7.dp, 10.dp)
+    val barWidth = 3.dp
+    val barSpacing = 1.5.dp
+
+    Row(
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(barSpacing),
+        modifier = modifier
+    ) {
+        barHeights.forEachIndexed { index, barHeight ->
+            val isActive = index < activeBars
+            Box(
+                modifier = Modifier
+                    .width(barWidth)
+                    .height(barHeight)
+                    .background(
+                        color = if (isActive) activeColor else inactiveColor,
+                        shape = RoundedCornerShape(topStart = 1.dp, topEnd = 1.dp)
+                    )
+            )
         }
     }
 }

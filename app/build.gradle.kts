@@ -15,12 +15,17 @@ android {
         applicationId = "com.syncjam.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.9.0"
+        versionCode = 11
+        versionName = "2.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
         }
+
+        // LiveKit Server URL — leer lassen, wird vom Server-Response (LiveKitTokenResponse.livekitUrl) gefüllt
+        // oder zur Laufzeit via Konfigurationsdatei gesetzt.
+        // Beispiel für lokale Entwicklung: buildConfigField("String", "LIVEKIT_URL", "\"wss://your-project.livekit.cloud\"")
+        buildConfigField("String", "LIVEKIT_URL", "\"\"")
     }
 
     signingConfigs {
@@ -130,6 +135,13 @@ dependencies {
     // Other
     implementation(libs.lottie.compose)
     implementation(libs.materialkolor)
+    implementation(libs.palette.ktx)
+    implementation(libs.datastore.preferences)
+    implementation(libs.paging.compose)
+    implementation(libs.paging.runtime)
+    implementation(libs.kronos.android)
+    implementation(libs.zxing.android)
+    implementation(libs.giphy.sdk)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.collections.immutable)
     implementation(libs.kotlinx.coroutines.android)

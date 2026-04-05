@@ -44,6 +44,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import androidx.compose.ui.graphics.Color
+import com.syncjam.app.core.ui.theme.AlbumArtColorExtractor
+import com.syncjam.app.core.ui.theme.DefaultSeedColor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -68,6 +71,9 @@ class SessionViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SessionUiState())
     val uiState: StateFlow<SessionUiState> = _uiState.asStateFlow()
+
+    private val _dominantColor = MutableStateFlow(DefaultSeedColor)
+    val dominantColor: StateFlow<Color> = _dominantColor.asStateFlow()
 
     private var wsJob: Job? = null
     private var positionTickerJob: Job? = null
@@ -142,6 +148,7 @@ class SessionViewModel @Inject constructor(
     }
 
     private fun loadAndPlay(track: CurrentTrackUi, positionMs: Long) {
+        updateDominantColor(track.albumArtUri?.let { Uri.parse(it) })
         val uri = getTrackUri(track) ?: return
         viewModelScope.launch(Dispatchers.Main) {
             try {
@@ -174,6 +181,15 @@ class SessionViewModel @Inject constructor(
     private fun stopExo() {
         viewModelScope.launch(Dispatchers.Main) {
             exoPlayer.stop()
+        }
+    }
+
+    // ── Dynamic Theming ───────────────────────────────────────────────────────
+
+    private fun updateDominantColor(albumArtUri: Uri?) {
+        viewModelScope.launch {
+            val color = AlbumArtColorExtractor.extractDominantColor(context, albumArtUri)
+            _dominantColor.value = color
         }
     }
 

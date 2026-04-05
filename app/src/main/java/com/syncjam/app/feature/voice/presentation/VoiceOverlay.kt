@@ -35,8 +35,12 @@ import com.syncjam.app.feature.voice.presentation.components.VoiceParticipantChi
  *
  * Enthält:
  * - Status-Label (Connecting / Voice aktiv / Voice Demo)
- * - Teilnehmer-Chips mit Speaking-Indikator
- * - Push-to-Talk Button (halten zum Sprechen)
+ * - Teilnehmer-Chips mit pulsierendem Speaking-Indikator + Netzwerkqualitäts-Balken
+ * - Push-to-Talk Button (immer sichtbar wenn aktiv; prominent wenn PTT-Modus)
+ *
+ * PTT-Modus-Verhalten:
+ * - Wenn [voiceState].isPttRecommended (> 4 Teilnehmer): Button ist größer + trägt Label
+ * - Wenn <= 4 Teilnehmer: kompakter Button ohne Label (normaler Mute-Toggle-Stil)
  */
 @Composable
 fun VoiceOverlay(
@@ -66,10 +70,10 @@ fun VoiceOverlay(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     val statusLabel = when (voiceState.connectionState) {
-                        VoiceConnectionState.Connecting -> "Verbinde…"
-                        VoiceConnectionState.Connected  -> "Voice aktiv"
-                        VoiceConnectionState.StubMode   -> "Voice (Demo)"
-                        is VoiceConnectionState.Error   -> "Fehler"
+                        VoiceConnectionState.Connecting   -> "Verbinde…"
+                        VoiceConnectionState.Connected    -> "Voice aktiv"
+                        VoiceConnectionState.StubMode     -> "Voice (Demo)"
+                        is VoiceConnectionState.Error     -> "Fehler"
                         VoiceConnectionState.Disconnected -> ""
                     }
                     val statusColor = when (voiceState.connectionState) {
@@ -77,24 +81,35 @@ fun VoiceOverlay(
                         else -> MaterialTheme.colorScheme.primary
                     }
 
-                    Text(
-                        text = statusLabel,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = statusColor,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = statusLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = statusColor
+                        )
+                        // PTT-Hinweis wenn mehr als 4 Teilnehmer
+                        if (voiceState.isPttRecommended) {
+                            Text(
+                                text = "Halten zum Sprechen",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
 
                     Spacer(Modifier.width(8.dp))
 
+                    // PTT-Button: Größe variiert je nach PTT-Modus
                     MuteButton(
                         isMuted = voiceState.isMicMuted,
                         onPress = onPttPress,
                         onRelease = onPttRelease,
-                        size = 40.dp
+                        size = if (voiceState.isPttRecommended) 52.dp else 40.dp
                     )
                 }
 
+                // Teilnehmer-Chips mit Speaking-Indikatoren + Netzwerkqualitäts-Balken
                 if (voiceState.participants.isNotEmpty()) {
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -102,7 +117,8 @@ fun VoiceOverlay(
                     ) {
                         items(
                             items = voiceState.participants,
-                            key = { it.sid }
+                            key = { it.sid },
+                            contentType = { "voice_participant" }
                         ) { participant ->
                             VoiceParticipantChip(participant = participant)
                         }

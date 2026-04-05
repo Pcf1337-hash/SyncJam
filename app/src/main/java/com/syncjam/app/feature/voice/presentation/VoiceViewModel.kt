@@ -17,6 +17,20 @@ class VoiceViewModel @Inject constructor(
     val voiceState: StateFlow<VoiceState> = voiceRepository.voiceState
 
     /**
+     * True wenn > 4 Teilnehmer → PTT-Modus wird empfohlen.
+     * Computed direkt aus VoiceState.isPttRecommended, kein eigener StateFlow nötig
+     * da VoiceOverlay sowieso voiceState beobachtet.
+     */
+    val isPttMode: Boolean
+        get() = voiceState.value.isPttRecommended
+
+    /**
+     * Music Ducking Flow — true wenn jemand spricht.
+     * SessionViewModel abonniert dies: wenn true → player.volume = 0.25f
+     */
+    val anyoneSpeaking: StateFlow<Boolean> = voiceRepository.anyoneSpeaking
+
+    /**
      * Push-to-Talk: Taste gedrückt → Verbindet (falls nötig) und aktiviert Mikrofon.
      * Beim ersten Drücken wird die LiveKit-Verbindung aufgebaut.
      */
@@ -25,7 +39,7 @@ class VoiceViewModel @Inject constructor(
             if (!voiceState.value.isActive) {
                 voiceRepository.connect(sessionId, userId, displayName)
             }
-            voiceRepository.setMicEnabled(true)
+            voiceRepository.setMicrophoneEnabled(true)
         }
     }
 
@@ -34,7 +48,17 @@ class VoiceViewModel @Inject constructor(
      * Verbindung bleibt bestehen (für schnelles Re-Aktivieren).
      */
     fun onPttReleased() {
-        voiceRepository.setMicEnabled(false)
+        voiceRepository.setMicrophoneEnabled(false)
+    }
+
+    /**
+     * Verbindet ohne sofort das Mikrofon zu aktivieren (für Auto-Join beim Betreten einer Session).
+     * Mikrofon bleibt stumm bis der User PTT drückt oder manuell aktiviert.
+     */
+    fun connect(sessionId: String, userId: String, displayName: String) {
+        viewModelScope.launch {
+            voiceRepository.connect(sessionId, userId, displayName)
+        }
     }
 
     fun disconnect() {

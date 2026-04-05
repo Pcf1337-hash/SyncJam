@@ -51,6 +51,13 @@ fun Application.configureRouting() {
             call.respond(mapOf("status" to "ok", "timestamp" to System.currentTimeMillis().toString()))
         }
 
+        // ── NTP HTTP Time ─────────────────────────────────────────────────────
+        // Used by NtpClockSync on the Android client for clock-offset sampling.
+        // Returns the server epoch millis as a plain Long (JSON number).
+        get("/time") {
+            call.respond(System.currentTimeMillis())
+        }
+
         // ── Session REST ──────────────────────────────────────────────────────
         post("/session") {
             val request = call.receive<CreateSessionRequest>()

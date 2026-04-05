@@ -17,6 +17,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -47,6 +48,8 @@ class HomeViewModel @Inject constructor(
 
     private val _updateRelease = MutableStateFlow<com.syncjam.app.core.update.AppRelease?>(null)
     private val _publicSessions = MutableStateFlow<List<PublicSessionUi>>(emptyList())
+    private val _detectedClipboardCode = MutableStateFlow<String?>(null)
+    val detectedClipboardCode = _detectedClipboardCode.asStateFlow()
     private val _extraState = MutableStateFlow(
         Triple(
             sessionPrefs.getLastSessionCode(),
@@ -147,5 +150,15 @@ class HomeViewModel @Inject constructor(
                 fetchPublicSessions()
             }
         }
+    }
+
+    /** Called when a valid 6-char session code is found in the clipboard. */
+    fun onClipboardCodeDetected(code: String) {
+        _detectedClipboardCode.update { code }
+    }
+
+    /** Dismiss the clipboard paste dialog without joining. */
+    fun dismissClipboardDialog() {
+        _detectedClipboardCode.update { null }
     }
 }

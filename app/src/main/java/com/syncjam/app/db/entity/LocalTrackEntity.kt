@@ -18,5 +18,7 @@ data class LocalTrackEntity(
     val sampleRate: Int?,
     val lastModified: Long,
     val lastPlayed: Long? = null,
-    val playCount: Int = 0
+    val playCount: Int = 0,
+    val isFavorite: Boolean = false,
+    val remoteCoverUrl: String? = null
 )

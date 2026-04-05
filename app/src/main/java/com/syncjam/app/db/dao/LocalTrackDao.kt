@@ -35,4 +35,16 @@ interface LocalTrackDao {
 
     @Query("DELETE FROM local_tracks")
     suspend fun deleteAll()
+
+    @Query("UPDATE local_tracks SET isFavorite = :isFavorite WHERE id = :id")
+    suspend fun setFavorite(id: String, isFavorite: Boolean)
+
+    @Query("SELECT * FROM local_tracks WHERE isFavorite = 1 ORDER BY title ASC")
+    fun getFavoriteTracks(): Flow<List<LocalTrackEntity>>
+
+    @Query("UPDATE local_tracks SET remoteCoverUrl = :url WHERE id = :id")
+    suspend fun updateRemoteCoverUrl(id: String, url: String)
+
+    @Query("SELECT * FROM local_tracks WHERE remoteCoverUrl IS NULL AND albumArtUri IS NULL")
+    suspend fun getTracksWithoutCover(): List<LocalTrackEntity>
 }

@@ -1,6 +1,8 @@
 package com.syncjam.app.feature.voting.presentation.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,9 +27,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.syncjam.app.feature.session.presentation.QueueEntryUi
 import com.syncjam.app.feature.session.presentation.TrackSourceUi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun QueueTrackItem(
@@ -53,6 +62,25 @@ fun QueueTrackItem(
         },
         label = "cardColor"
     )
+
+    // ── Upvote scale-up animation ─────────────────────────────────────────────
+    var upvotePulsed by remember { mutableStateOf(false) }
+    val upvoteScale by animateFloatAsState(
+        targetValue = if (upvotePulsed) 1.45f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.35f, stiffness = 500f),
+        label = "upvote_scale"
+    )
+    val scope = rememberCoroutineScope()
+
+    val handleUpvote = {
+        onUpvote()
+        scope.launch {
+            upvotePulsed = true
+            delay(180)
+            upvotePulsed = false
+        }
+        Unit
+    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -118,12 +146,20 @@ fun QueueTrackItem(
 
             // Vote controls
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = onUpvote, modifier = Modifier.size(32.dp)) {
+                IconButton(
+                    onClick = handleUpvote,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         Icons.Default.ThumbUp,
                         contentDescription = "Upvote",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier
+                            .size(18.dp)
+                            .graphicsLayer {
+                                scaleX = upvoteScale
+                                scaleY = upvoteScale
+                            }
                     )
                 }
                 Text(

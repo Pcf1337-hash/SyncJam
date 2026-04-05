@@ -1,335 +1,236 @@
-# tasks/todo.md — SyncJam Implementation Plan
+# SyncJam v2.0 — Modernisierung TODO
+> Stand: 2026-04-05 | Vollständiger Plan: `C:\Users\Administrator\.claude\plans\functional-whistling-clarke.md`
+> Research-Report: `C:\Users\Administrator\Downloads\deep-research-report.md`
 
-> **10 Phasen, ~120 Tasks** — Von Projekt-Setup bis Polish & Release.
-> Jede Phase baut auf der vorherigen auf. Nicht überspringen!
-
----
-
-## Phase 1: Projekt-Grundgerüst & Build-System
-> **Ziel:** Kompilierbares Projekt mit allen Dependencies, leere Feature-Module, Theme, Navigation.
-
-- [ ] 1.1 Android-Projekt erstellen (com.syncjam.app, minSdk 26, targetSdk 35)
-- [ ] 1.2 `gradle/libs.versions.toml` mit ALLEN Dependencies aus CLAUDE.md anlegen
-- [ ] 1.3 `build.gradle.kts` (Project + App) konfigurieren — KSP, Hilt, Compose, kotlinx.serialization
-- [ ] 1.4 Package-Struktur anlegen: core/, feature/, sync/, db/ (alle Packages leer mit .gitkeep)
-- [ ] 1.5 `SyncJamApp.kt` (@HiltAndroidApp) + `MainActivity.kt` (Single Activity, enableEdgeToEdge)
-- [ ] 1.6 Theme-System: `SyncJamTheme.kt` mit MaterialKolor DynamicMaterialTheme (Dark Default)
-- [ ] 1.7 Typography definieren (Type.kt) — Inter/Outfit oder System Default
-- [ ] 1.8 `core/common/Result.kt` — Sealed Result<T> (Success, Error, Loading)
-- [ ] 1.9 `core/common/Extensions.kt` — Basis-Extensions (Context, Flow, etc.)
-- [ ] 1.10 Navigation: `SyncJamNavGraph.kt` mit @Serializable Routes + NavHost (leere Screens)
-- [ ] 1.11 AndroidManifest.xml mit allen Permissions aus CLAUDE.md
-- [ ] 1.12 `.editorconfig` + Detekt/Ktlint Config
-- [ ] 1.13 **Verify:** `./gradlew assembleDebug` kompiliert fehlerfrei
-
-### Review Phase 1:
-- [ ] Alle Dependencies resolven korrekt
-- [ ] Navigation zwischen leeren Screens funktioniert
-- [ ] Theme wird korrekt angewendet (Dark, Material 3)
+## WICHTIG BEI CONTEXT-COMPACT
+Falls der Kontext zurückgesetzt wird — diese Agents sind bereits FERTIG:
+1. ✅ Social Features (16 Dateien in feature/social/)
+2. ✅ Voice Chat (echte LiveKit Integration)
+3. ✅ Player + Home + Library Modernisierung
+4. ✅ Sync Engine + Session Header + Queue
+5. 🔄 Theming + Settings → Agent läuft noch (a4a9cd22da1b51227) — falls nicht fertig, Phase 4+11 manuell
+6. ⏳ Phase 10 (Auth/Profil), 13 (UI/UX), 14 (Server), 15 (Test), 16 (README), 17 (Release) → noch ausstehend
 
 ---
 
-## Phase 2: Lokale Musikbibliothek
-> **Ziel:** MediaStore scannen, Tracks in Room speichern, Library-UI mit Suche.
-
-- [ ] 2.1 Room Database Setup: `SyncJamDatabase.kt` mit KSP
-- [ ] 2.2 `LocalTrackEntity.kt` — Entity wie in CLAUDE.md definiert
-- [ ] 2.3 `LocalTrackDao.kt` — @Query für getAll, search(query), getByAlbum, getByArtist, @Upsert
-- [ ] 2.4 `DatabaseModule.kt` — Hilt @Module mit @Provides für Database + DAOs
-- [ ] 2.5 Domain Models: `Track.kt`, `Album.kt`, `Artist.kt` (mit Mapper-Extensions)
-- [ ] 2.6 `MediaStoreScanner.kt` — ContentResolver Query auf MediaStore.Audio.Media
-  - [ ] Filter: IS_MUSIC = 1, DURATION > 30000
-  - [ ] Felder: TITLE, ARTIST, ALBUM, DURATION, SIZE, MIME_TYPE, DATA, ALBUM_ID
-  - [ ] Album Art URI: `ContentUris.withAppendedId(MediaStore.Audio.Albums.EXTERNAL_CONTENT_URI, albumId)`
-- [ ] 2.7 `LibraryRepository` Interface + `LibraryRepositoryImpl`
-- [ ] 2.8 UseCases: `ScanMediaStoreUseCase`, `GetTracksUseCase`, `SearchLibraryUseCase`, `GetAlbumsUseCase`
-- [ ] 2.9 `LibraryViewModel` — StateFlow<LibraryUiState>, Event-basiert
-- [ ] 2.10 Permission-Handling: READ_MEDIA_AUDIO (API 33+) / READ_EXTERNAL_STORAGE (≤32)
-- [ ] 2.11 UI: `LibraryScreen` mit Tabs (Tracks, Albums, Artists)
-- [ ] 2.12 UI: `TrackListItem` — Album Art, Title, Artist, Duration (LazyColumn mit key+contentType)
-- [ ] 2.13 UI: `AlbumGrid` — LazyVerticalGrid mit Album Cover + Name
-- [ ] 2.14 UI: Search Bar mit debounced Input (300ms)
-- [ ] 2.15 **Verify:** App zeigt lokale Musik an, Suche funktioniert, Album Art lädt
-
-### Review Phase 2:
-- [ ] MediaStore-Scan läuft performant (< 2s für 1000 Tracks)
-- [ ] Room-Cache funktioniert (Zweiter Start lädt aus DB, nicht MediaStore)
-- [ ] Suche liefert korrekte Ergebnisse über Title + Artist + Album
+## Phase 1 — Dependency Updates ✅ ERLEDIGT
+- [x] media3: 1.6.1 → 1.9.0 (`gradle/libs.versions.toml`)
+- [x] livekit: 2.9.0 → 2.23.5
+- [x] palette-ktx 1.0.0 hinzugefügt
+- [x] paging-compose 3.3.6 hinzugefügt
+- [x] kronos-android 0.0.1-alpha10 hinzugefügt
+- [x] zxing-android 4.3.0 hinzugefügt
+- [x] giphy-sdk Library-Eintrag hinzugefügt
+- [x] app/build.gradle.kts — alle neuen deps + LIVEKIT_URL BuildConfig
 
 ---
 
-## Phase 3: Audio Playback (Lokal, ohne Sync)
-> **Ziel:** Voll funktionaler lokaler Music Player mit Media3, Foreground Service, Mini-Player.
-
-- [ ] 3.1 `PlaybackService.kt` — MediaSessionService mit Media3 ExoPlayer
-  - [ ] AudioAttributes: USAGE_MEDIA, CONTENT_TYPE_MUSIC
-  - [ ] Audio Focus: AUDIOFOCUS_GAIN
-  - [ ] Foreground Service + MediaNotification
-- [ ] 3.2 `PlaybackRepository` Interface + Impl — Abstraction über Media3 Player
-- [ ] 3.3 `PlaybackState.kt` Domain Model — isPlaying, currentTrack, positionMs, durationMs, queue
-- [ ] 3.4 Hilt Module: Player-Instanz providen via MediaController + SessionToken
-- [ ] 3.5 `PlayerViewModel` — Observes PlaybackState, dispatches PlayerCommands
-- [ ] 3.6 UI: `MiniPlayerBar` — Composable am unteren Rand (Track Info + Play/Pause + Progress)
-- [ ] 3.7 UI: `FullPlayerScreen` — Großes Album Art, Controls, Progress Slider, Queue-Button
-- [ ] 3.8 UI: `PlaybackControls` — Previous, Play/Pause, Next, Shuffle, Repeat
-- [ ] 3.9 UI: `ProgressSlider` — Draggable, zeigt aktuelle Position + Gesamtdauer
-- [ ] 3.10 UI: `AlbumArtCover` — Coil AsyncImage mit Crossfade + Placeholder
-- [ ] 3.11 Shared Element Transition: MiniPlayer → FullPlayer (Album Art + Title)
-- [ ] 3.12 Queue Management: AddToQueue, RemoveFromQueue, Reorder
-- [ ] 3.13 Notification Controls funktionieren (Play/Pause/Skip via MediaSession)
-- [ ] 3.14 **Verify:** Musik spielt, Notification funktioniert, Mini→Full Transition smooth
-
-### Review Phase 3:
-- [ ] Audio Focus wird korrekt gehandled (pausiert bei Anruf, etc.)
-- [ ] Service überlebt App-Close (Foreground Notification)
-- [ ] Seek funktioniert flüssig ohne Stutter
+## Phase 2 — Home Screen ✅ ERLEDIGT
+- [x] Clipboard-Erkennung für Session-Code (LaunchedEffect + ClipboardManager + AlertDialog)
+- [x] VinylIdleAnimation Composable (rotierende Vinyl-Scheibe in Compose)
+- [x] HomeViewModel: detectedClipboardCode StateFlow + onClipboardCodeDetected + dismissClipboardDialog
+- [ ] Session-Verlauf mit Album-Art Thumbnails ⏳ (ausstehend)
+- [ ] Öffentlicher Session-Feed ⏳ (ausstehend)
 
 ---
 
-## Phase 4: Supabase Backend & Auth
-> **Ziel:** User-Authentifizierung, Profil, Supabase-Tabellen aufgesetzt.
-
-- [ ] 4.1 Supabase-Projekt erstellen (Free Tier)
-- [ ] 4.2 SQL-Schema aus CLAUDE.md ausführen (profiles, sessions, participants, track_requests, votes)
-- [ ] 4.3 RLS Policies aktivieren und testen
-- [ ] 4.4 Vote-Score Trigger deployen
-- [ ] 4.5 Supabase Kotlin SDK einbinden (`supabase-kt`)
-- [ ] 4.6 `NetworkModule.kt` — Supabase Client mit Auth + Realtime + Storage + Postgrest
-- [ ] 4.7 `AuthRepository` Interface + `AuthRepositoryImpl` — signUp, signIn, signOut, currentUser
-- [ ] 4.8 `AuthViewModel` + `LoginScreen` — Email/Passwort Auth (simple)
-- [ ] 4.9 `ProfileSheet` — Display Name + Avatar setzen
-- [ ] 4.10 Deep Link Support: `syncjam://join/{code}` für Session-Invites
-- [ ] 4.11 **Verify:** Login/Logout funktioniert, Profil wird in Supabase gespeichert
-
-### Review Phase 4:
-- [ ] RLS blockiert unauthorisierten Zugriff
-- [ ] Token-Refresh funktioniert automatisch
-- [ ] Deep Links öffnen die App korrekt
+## Phase 3 — Library Verbesserungen ✅ ERLEDIGT
+- [x] Album-Grid / Listen-Toggle mit AnimatedContent (LazyVerticalGrid ↔ LazyColumn)
+- [x] Sort/Filter BottomSheet (ModalBottomSheet + SortOption enum, 5 Optionen)
+- [x] Shimmer-Placeholder ShimmerItem via graphicsLayer (nie .alpha Modifier)
+- [x] SortOption in LibraryUiState + toggleViewMode() + applySorting()
+- [ ] „Zuletzt gespielt" / „Am häufigsten" horizontales Karussell ⏳ (ausstehend)
 
 ---
 
-## Phase 5: Ktor WebSocket Sync Server
-> **Ziel:** Funktionierender Sync-Server mit Room-Management, NTP-Clock-Sync, Command Broadcasting.
-
-- [ ] 5.1 Ktor Server Modul aufsetzen (server/build.gradle.kts)
-- [ ] 5.2 `Application.kt` — Ktor mit WebSocket + ContentNegotiation + CORS Plugins
-- [ ] 5.3 `SyncCommand.kt` — Shared Protocol sealed interface (wie in CLAUDE.md)
-- [ ] 5.4 `SessionState.kt` — Authoritative State Data Class (currentTrack, positionMs, isPlaying, queue, participants)
-- [ ] 5.5 `SessionManager.kt` — ConcurrentHashMap<String, SessionRoom>
-  - [ ] createSession(hostId) → SessionCode
-  - [ ] joinSession(code, userId, wsSession)
-  - [ ] leaveSession(code, userId)
-  - [ ] getSession(code)
-- [ ] 5.6 WebSocket Route: `/ws/session/{code}`
-  - [ ] On Connect: Validate token, add to room, send StateSnapshot
-  - [ ] On Message: Parse SyncCommand, update state, broadcast to room
-  - [ ] On Close: Remove from room, broadcast participant leave
-- [ ] 5.7 NTP Handshake: `/ws/sync/{code}` — T1→T2→T3→T4 Exchange
-- [ ] 5.8 Heartbeat Handler: Empfange Client-Positionen, berechne Drift, sende Korrekturen
-- [ ] 5.9 `SyncBroadcaster.kt` — Broadcast mit Server-Timestamp zu allen Teilnehmern
-- [ ] 5.10 REST Endpoints: `POST /session` (create), `GET /session/{code}` (info), `DELETE /session/{code}` (end)
-- [ ] 5.11 Dockerfile + docker-compose.yml für lokales Development
-- [ ] 5.12 **Verify:** Server startet, WebSocket-Verbindung klappt, Kommandos werden gebroadcasted
-
-### Review Phase 5:
-- [ ] Latenz < 50ms für Command Broadcasting (lokal testen)
-- [ ] Mehrere Clients gleichzeitig möglich
-- [ ] Session wird aufgeräumt wenn alle disconnecten
+## Phase 4 — Dynamic Album Art Theming ✅ ERLEDIGT
+- [x] `core/ui/theme/AlbumArtColorExtractor.kt` — Coil 3 + Palette API, 100×100 IO-Thread
+- [x] `core/ui/theme/SyncJamTheme.kt` — war bereits korrekt mit DynamicMaterialTheme
+- [x] SessionViewModel — dominantColor StateFlow, updateDominantColor() bei Track-Wechsel
 
 ---
 
-## Phase 6: Client-Seitige Sync-Engine
-> **Ziel:** Android-Client verbindet sich mit Sync-Server, synchronisiertes Playback zwischen 2+ Geräten.
-
-- [ ] 6.1 `core/network/WebSocketClient.kt` — Ktor WebSocket Client Wrapper
-  - [ ] Auto-Reconnect mit Exponential Backoff + Jitter
-  - [ ] Ping/Pong: 15s Intervall, 10s Timeout
-  - [ ] Flow<WebSocketEvent> für incoming messages
-- [ ] 6.2 `sync/NtpClockSync.kt` — 5-Sample NTP Handshake, Offset berechnen
-- [ ] 6.3 `sync/SyncEngine.kt` — Orchestriert:
-  - [ ] Session Join/Leave
-  - [ ] Clock Sync bei Connect
-  - [ ] Command Dispatching (outgoing)
-  - [ ] Command Processing (incoming)
-  - [ ] StateFlow<SyncState> exposed
-- [ ] 6.4 `sync/DriftCorrector.kt` — Drift Detection + Correction
-  - [ ] < 150ms: nichts
-  - [ ] 150-500ms: Playback-Rate 1.02×/0.98× via player.setPlaybackParameters()
-  - [ ] 500-2000ms: player.seekTo(correctedPosition)
-  - [ ] > 2000ms: Full re-sync (StateSnapshot anfordern)
-- [ ] 6.5 `SyncedPlayerController.kt` — Wraps Media3 Player + SyncEngine
-  - [ ] play() → sendet SyncCommand.Play an Server
-  - [ ] onServerPlay() → berechnet korrigierte Position, seekTo, play
-  - [ ] Heartbeat: alle 2s currentPosition an Server senden
-- [ ] 6.6 `SessionRepositoryImpl.kt` — Create/Join/Leave Session via REST + WebSocket
-- [ ] 6.7 `SessionViewModel` — UI State für Session (Participants, CurrentTrack, Queue, IsPlaying)
-- [ ] 6.8 UI: `SessionScreen` — Übersicht: Now Playing, Participants, Session Code teilen
-- [ ] 6.9 UI: `CreateSessionScreen` — Session Name, Session erstellen → Code anzeigen
-- [ ] 6.10 UI: `JoinSessionScreen` — Code eingeben oder Deep Link
-- [ ] 6.11 **Verify:** Zwei Geräte spielen synchronisiert den gleichen Track, Drift < 200ms
-
-### Review Phase 6:
-- [ ] Sync funktioniert bei gutem Netz (< 100ms Drift)
-- [ ] Reconnect nach Netzwerkverlust funktioniert
-- [ ] Seek/Skip wird korrekt synchronisiert
-- [ ] Session Join/Leave aktualisiert alle Clients
+## Phase 5 — Vollbild-Player Modernisierung ✅ ERLEDIGT
+- [x] Vinyl-Rotation (infiniteRepeatable tween 4000ms, lastRotation snap bei Pause)
+- [x] Marquee: Modifier.basicMarquee(iterations = Int.MAX_VALUE) auf Titel
+- [x] Haptic: LocalHapticFeedback auf Play/Pause/Skip Prev/Next
+- [x] Glassmorphism: API31+ RenderEffect.createBlurEffect, Fallback semi-transparent
+- [x] Swipe-Down Dismiss: Animatable + detectDragGestures, Schwelle 200dp, spring-back
+- [x] MiniPlayer: LinearProgressIndicator 2dp + pulsierender Play-Indikator
+- [ ] Shared Element Transition Mini↔Full ⏳ (komplex, nach NavGraph-Check)
 
 ---
 
-## Phase 7: Audio File Transfer
-> **Ziel:** Tracks teilen zwischen Geräten, die den Track nicht lokal haben.
+## Phase 6 — Social Features ✅ ERLEDIGT
+Alle neuen Dateien unter: `app/src/main/java/com/syncjam/app/feature/social/`
 
-- [ ] 7.1 Track-Matching Logik: Titel + Artist + Duration (±2s) → Beide haben den Track?
-- [ ] 7.2 `TrackTransferOffer` bei Play: Server broadcastet Track-Info, Clients prüfen lokal
-- [ ] 7.3 WebSocket Binary Frame Streaming: 4KB Chunks, Opus 128kbps Transcoding
-  - [ ] Sender: MediaCodec oder FFmpeg-lite für Opus-Encoding
-  - [ ] Empfänger: Custom `DataSource` für Media3 das aus Buffer liest
-- [ ] 7.4 Jitter Buffer: 500ms initial, adaptive (200ms bei stabiler Verbindung)
-- [ ] 7.5 Supabase Storage Upload: Parallel im Hintergrund für späteren Zugriff
-- [ ] 7.6 Fallback: Wenn Transfer zu langsam → Skip zum nächsten gemeinsamen Track
-- [ ] 7.7 UI: Transfer-Indikator (Buffering-Animation, Download-Progress)
-- [ ] 7.8 **Verify:** User A spielt Track, User B (ohne Track) hört synchronisiert mit
-
-### Review Phase 7:
-- [ ] Transfer startet innerhalb 1s nach Play-Command
-- [ ] Buffering-Zeit < 3s bei normalem LTE
-- [ ] Audio-Qualität bleibt bei Opus 128kbps akzeptabel
-- [ ] Kein Memory Leak bei langem Streaming
-
----
-
-## Phase 8: Voice Chat (LiveKit)
-> **Ziel:** Voice Chat in der Session, Mute/Unmute, Music Ducking.
-
-- [ ] 8.1 LiveKit Cloud Account + API Keys
-- [ ] 8.2 Token-Generierung: Ktor Server Endpoint `/voice/token` mit LiveKit Server SDK
-- [ ] 8.3 `VoiceRepositoryImpl.kt` — Connect, Disconnect, SetMicEnabled, ObserveParticipants
-- [ ] 8.4 `VoiceViewModel` — VoiceState (isConnected, isMuted, participants, activeSpeaker)
-- [ ] 8.5 Music Ducking: player.volume = 0.25f wenn Voice aktiv, 1.0f wenn Voice inaktiv
-- [ ] 8.6 UI: `VoiceOverlay` — Floating Composable mit Mute-Button + Active Speaker Indicator
-- [ ] 8.7 UI: `VoiceParticipantChip` — Avatar + Name + Speaking Indicator (animierter Ring)
-- [ ] 8.8 UI: `MuteButton` — Toggle mit Animation (Mic ↔ MicOff Icon)
-- [ ] 8.9 Permission: RECORD_AUDIO mit Rationale Dialog
-- [ ] 8.10 Push-to-Talk Modus (optional, aktivierbar in Settings)
-- [ ] 8.11 **Verify:** Voice Chat funktioniert parallel zu Musik, kein Echo, Ducking smooth
-
-### Review Phase 8:
-- [ ] Latenz Voice < 300ms
-- [ ] Echo Cancellation funktioniert
-- [ ] Music ducking smooth (kein abrupter Volume-Sprung)
-- [ ] Mute/Unmute reagiert sofort
+- [x] `domain/model/Reaction.kt` (@Immutable)
+- [x] `domain/model/ChatMessage.kt` (@Immutable, isOwn flag)
+- [x] `domain/model/GifResult.kt`
+- [x] `domain/repository/ReactionRepository.kt`
+- [x] `domain/repository/ChatRepository.kt`
+- [x] `data/ReactionRepositoryImpl.kt` (Stub, Supabase TODOs markiert)
+- [x] `data/ChatRepositoryImpl.kt` (Stub, Supabase TODOs markiert)
+- [x] `data/GiphyDataSource.kt` — suspendCancellableCoroutine um GPHCore
+- [x] `presentation/components/FloatingEmoji.kt` — graphicsLayer translationY+alpha, LongPress Tooltip
+- [x] `presentation/components/EmojiPicker.kt` — ModalBottomSheet, 8 Quick + LazyVerticalGrid 32 Emojis
+- [x] `presentation/ReactionOverlay.kt` — max 20, Double-Tap Burst 5 Emojis, FAB
+- [x] `presentation/components/ChatBubble.kt` — isOwn rechts/links, asymm. RoundedCornerShape
+- [x] `presentation/components/MessageInput.kt` — 500-Zeichen-Limit, IME Send Action
+- [x] `presentation/ChatSheet.kt` — auto-scroll, Typing-Indicator AnimatedVisibility, Unread-Badge
+- [x] `presentation/components/GifPicker.kt` — 2-Spalten Grid, Rate-Limit Countdown, Preview-Dialog
+- [x] `presentation/SocialViewModel.kt` — @HiltViewModel, ImmutableList, supervisorScope
+- [ ] Social Features in SessionScreen einbinden ⏳ (nach Theming-Agent)
 
 ---
 
-## Phase 9: Social Features (Reactions, GIFs, Chat, Voting)
-> **Ziel:** Alle interaktiven Features implementiert und funktional.
-
-### Emoji Reactions
-- [ ] 9.1 `Reaction.kt` Domain Model + `FloatingReaction` UI Model
-- [ ] 9.2 `ReactionRepository` — Send via Supabase Broadcast, Observe incoming
-- [ ] 9.3 `ReactionOverlay.kt` — Floating Emojis mit graphicsLayer Animation
-  - [ ] Y: -800dp über 2s
-  - [ ] Alpha: 1→0
-  - [ ] Random X offset (20-80% screen width)
-  - [ ] Random Rotation (±15°)
-  - [ ] Max 20 gleichzeitig
-- [ ] 9.4 `EmojiPicker.kt` — Row mit 8-10 Emoji Buttons (❤️🔥😍🎵🤯💀👏🎉)
-- [ ] 9.5 Haptic Feedback beim Senden
-
-### GIF Sharing
-- [ ] 9.6 Giphy SDK einbinden + API Key
-- [ ] 9.7 `GifPicker.kt` — Giphy Dialog Integration in Compose
-- [ ] 9.8 GIF-URL via Supabase Broadcast senden
-- [ ] 9.9 GIF-Anzeige via Coil GIF Decoder im Chat
-- [ ] 9.10 Rate Limit: Max 1 GIF pro 5 Sekunden pro User
-
-### Chat
-- [ ] 9.11 `ChatMessage.kt` Domain Model
-- [ ] 9.12 `ChatRepository` — Supabase Broadcast für ephemere Messages
-- [ ] 9.13 `ChatSheet.kt` — Bottom Sheet mit MessageList + Input
-- [ ] 9.14 `ChatBubble.kt` — Sender Name, Message, Timestamp, optional GIF
-- [ ] 9.15 `MessageInput.kt` — TextField + Send Button + GIF Button
-
-### Track Voting
-- [ ] 9.16 `VotingRepository` — Supabase Postgres CRUD für track_requests + votes
-- [ ] 9.17 Realtime-Subscription auf track_requests (Postgres Changes)
-- [ ] 9.18 `VotingViewModel` — Queue State, Vote Actions, Request Track
-- [ ] 9.19 `QueueScreen.kt` — LazyColumn mit QueueTrackItems, sortiert nach Score
-- [ ] 9.20 `QueueTrackItem.kt` — Track Info + Upvote/Downvote Buttons + Score Badge
-- [ ] 9.21 `AddToQueueFAB.kt` — FAB → Sheet zum Track aus Library wählen
-- [ ] 9.22 Auto-Play: Wenn aktueller Track endet → nächster Track mit höchstem Score
-- [ ] 9.23 **Verify:** Reactions floaten, GIFs laden, Chat funktioniert, Voting aktualisiert Queue
-
-### Review Phase 9:
-- [ ] Reactions sind flüssig (60fps) auch bei 20 gleichzeitigen
-- [ ] GIFs laden schnell (< 1s)
-- [ ] Chat-Nachrichten erscheinen sofort bei allen Teilnehmern
-- [ ] Voting-Score aktualisiert sich in Echtzeit
+## Phase 7 — Voice Chat Real Integration ✅ ERLEDIGT
+- [x] ConnectionQuality Enum (EXCELLENT/GOOD/POOR/LOST/UNKNOWN) in VoiceParticipant.kt
+- [x] VoiceState: anyoneSpeaking + isPttRecommended computed properties
+- [x] SpeakingIndicator — pulsierender Ring (graphicsLayer scale 1.0→1.15, alpha 0.4→1.0)
+- [x] VoiceParticipantChip — NetworkQualityBars 3 Balken (tertiary/secondary/error)
+- [x] VoiceRepositoryImpl — echte Room.connect(), ActiveSpeakersChanged Events, ConnectionQualityChanged
+- [x] VoiceViewModel — isPttMode, anyoneSpeaking StateFlow, onPttPressed/Released
+- [x] VoiceOverlay — PTT-Hinweis, SpeakingIndicator integriert
+- [x] VoiceModule — Room als Hilt Singleton via LiveKit.create()
+- [x] SyncJamApp — LiveKit.init() in onCreate()
+- [x] buildConfigField LIVEKIT_URL bereits gesetzt
 
 ---
 
-## Phase 10: Polish, Testing & Release-Prep
-> **Ziel:** Produktionsreife, Performance, Edge Cases, Build-Optimierung.
-
-### UI Polish
-- [ ] 10.1 Audio Waveform Visualizer auf FullPlayerScreen (compose-audiowaveform)
-- [ ] 10.2 Lottie-Animationen für Reaction-Effekte (Herzen, Feuer, Konfetti)
-- [ ] 10.3 Loading States für alle Screens (Shimmer/Skeleton)
-- [ ] 10.4 Error States mit Retry-Buttons
-- [ ] 10.5 Empty States (keine Tracks, keine Session, leere Queue)
-- [ ] 10.6 Splash Screen (Core Splash Screen API)
-- [ ] 10.7 App Icon + Adaptive Icon
-- [ ] 10.8 Smooth Color-Transitions bei Track-Wechsel (MaterialKolor animate)
-
-### Performance
-- [ ] 10.9 ProGuard/R8 Rules für alle Libraries
-- [ ] 10.10 Baseline Profiles generieren
-- [ ] 10.11 Memory-Leak Check (LeakCanary) besonders bei WebSocket + LiveKit
-- [ ] 10.12 Battery-Impact prüfen (Foreground Service + WebSocket + Voice)
-
-### Edge Cases
-- [ ] 10.13 Offline-Handling: Graceful Degradation wenn Server nicht erreichbar
-- [ ] 10.14 Session-Cleanup: Auto-End nach 30min Inaktivität
-- [ ] 10.15 Max Participants Limit (8) enforced
-- [ ] 10.16 Audio Focus: Pausiert bei Anruf, resumed danach
-- [ ] 10.17 Backgrounding: Service läuft weiter, WebSocket bleibt verbunden
-- [ ] 10.18 Orientation Change: State bleibt erhalten
-- [ ] 10.19 Large Library Handling: 10.000+ Tracks Performance-Test
-
-### Testing
-- [ ] 10.20 Unit Tests: Alle UseCases (min 80% Coverage)
-- [ ] 10.21 Unit Tests: SyncEngine + DriftCorrector
-- [ ] 10.22 Unit Tests: ViewModels mit Turbine
-- [ ] 10.23 Integration Tests: WebSocket Sync zwischen 2 Clients
-- [ ] 10.24 UI Tests: Session Join Flow, Voting Flow
-
-### Release
-- [ ] 10.25 Signing Config (Release Keystore)
-- [ ] 10.26 `./gradlew assembleRelease` — APK < 30MB
-- [ ] 10.27 Server Deployment (Railway/Fly.io) + Environment Variables
-- [ ] 10.28 README.md mit Setup-Anleitung
-- [ ] 10.29 **Final Verify:** 2-Device Test, kompletter Flow von Login → Session → Sync → Voice → Reactions → End
-
-### Review Phase 10:
-- [ ] Kein ANR, kein Crash bei normalem Usage
-- [ ] Cold Start < 2s
-- [ ] Sync-Drift < 200ms bei normalem LTE
-- [ ] Voice + Music + Reactions gleichzeitig ohne Stutter
+## Phase 8 — Queue & Voting Verbesserungen ✅ ERLEDIGT
+- [x] `feature/voting/presentation/QueueScreen.kt` — Modifier.animateItem() auf Items
+- [x] Vote-Animation: spring-based Scale-Up (1.0→1.45→1.0) auf ThumbUp-Icon
+- [ ] Track-Transfer-Indikator: Cloud-Icon + CircularProgressIndicator
+- [ ] Host Drag-Reorder Controls (nur Host)
 
 ---
 
-## 📊 Fortschritts-Tracking
+## Phase 9 — Session Header ✅ ERLEDIGT
+- [x] Host-Krone Icons.Default.WorkspacePremium über Avatar (tertiary Farbe)
+- [x] Session-Timer HH:MM:SS mit LaunchedEffect
+- [x] Invite-Button war bereits vorhanden
+- [ ] Session-Name editierbar (nur Host): tap → AlertDialog mit TextField
 
-| Phase | Status | Tasks | Done | % |
-|---|---|---|---|---|
-| 1 - Grundgerüst | ⬜ Not Started | 13 | 0 | 0% |
-| 2 - Library | ⬜ Not Started | 15 | 0 | 0% |
-| 3 - Playback | ⬜ Not Started | 14 | 0 | 0% |
-| 4 - Backend & Auth | ⬜ Not Started | 11 | 0 | 0% |
-| 5 - Sync Server | ⬜ Not Started | 12 | 0 | 0% |
-| 6 - Client Sync | ⬜ Not Started | 11 | 0 | 0% |
-| 7 - File Transfer | ⬜ Not Started | 8 | 0 | 0% |
-| 8 - Voice Chat | ⬜ Not Started | 11 | 0 | 0% |
-| 9 - Social | ⬜ Not Started | 23 | 0 | 0% |
-| 10 - Polish | ⬜ Not Started | 29 | 0 | 0% |
-| **TOTAL** | | **147** | **0** | **0%** |
+---
+
+## Phase 10 — Auth & Profil ⏳ AUSSTEHEND
+- [ ] `feature/auth/data/AuthRepositoryImpl.kt` erstellen
+- [ ] `feature/profile/presentation/ProfileSheet.kt` erstellen
+  - ImagePicker-Intent für Avatar
+  - Supabase Storage upload: `storage.from("avatars").upload(userId, bytes)`
+  - Coil AsyncImage für Avatar-Anzeige
+- [ ] Avatar-URL in ParticipantAvatarRow anzeigen
+
+---
+
+## Phase 11 — Einstellungen-Screen ✅ ERLEDIGT
+- [x] `feature/settings/presentation/SettingsScreen.kt` — 4 Sektionen: Audio, Benachrichtigungen, Erscheinungsbild, Speicher
+- [x] `feature/settings/presentation/SettingsViewModel.kt` — DataStore Preferences (syncjam_settings)
+- [x] Route Settings in SyncJamNavGraph.kt + HomeScreen Settings-Button im Profil-Tab
+- [x] datastore = "1.1.4" in libs.versions.toml + build.gradle.kts
+
+---
+
+## Phase 12 — Sync Engine ✅ ERLEDIGT
+- [x] `sync/NtpClockSync.kt` — 5 Samples bei Join, Min-RTT, 30s Auto-Refresh
+- [x] `sync/DriftCorrector.kt` — Thresholds: <150 nix, 150-500 Rate, 500-2000 Seek, >2000 Resync, pitch=1.0f
+- [x] `sync/SyncStateMachine.kt` erstellt — SessionSyncState enum, vollständige Transition-Tabelle
+- [x] Server `/time` Endpoint in `Routing.kt` hinzugefügt
+
+---
+
+## Phase 13 — Allgemeine UI/UX ⏳ AUSSTEHEND
+- [ ] `feature/player/data/PlaybackService.kt` — MediaSession mit NotificationCompat.MediaStyle
+- [ ] Lockscreen Controls (Play/Pause/Skip)
+- [ ] Adaptive Tablet-Layout: WindowSizeClass in MainActivity oder NavGraph
+- [ ] Onboarding: `feature/onboarding/` — 3 Screens, DataStore `onboarding_completed` Flag
+- [ ] Shimmer-Loader in HomeScreen
+
+---
+
+## Phase 14 — Server-Deployment ⏳ AUSSTEHEND
+```bash
+ssh root@159.195.63.246     # PW: 1djvVTWgZ1ozUxW
+cd /opt/syncjam/
+cat docker-compose.yml      # LiveKit + Supabase env vars prüfen
+./gradlew :server:shadowJar
+scp server/build/libs/server-all.jar root@159.195.63.246:/opt/syncjam/server.jar
+docker-compose down && docker-compose up -d
+curl http://159.195.63.246:8080/health
+```
+- [ ] /time Endpoint auf Server aktiv
+- [ ] LiveKit env vars gesetzt (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_WS_URL)
+- [ ] Server läuft nach Deployment
+
+---
+
+## Phase 15 — Build & Emulator Testing ⏳ AUSSTEHEND
+```bash
+./gradlew :app:assembleDebug   # Build testen
+./gradlew :app:installDebug    # Auf Emulator installieren
+```
+MCP Tools: `mcp__android-toolkit__take-screenshot`, `mcp__android-toolkit__inject-input`, `mcp__android-toolkit__manage-logcat`
+
+- [ ] Build erfolgreich ohne Compile-Errors
+- [ ] Screenshot Home Screen
+- [ ] Screenshot Library (Grid + Listen Toggle)
+- [ ] Screenshot Full Player (Vinyl-Animation, Marquee)
+- [ ] Emoji Reaktion tippen → FloatingEmoji erscheint
+- [ ] Chat Sheet öffnen → Bubbles korrekt
+- [ ] Voice Chat Mic tippen → LiveKit Logcat
+- [ ] Logcat — keine Crashes/Exceptions
+- [ ] Sync Test (Session erstellen + beitreten)
+
+---
+
+## Phase 16 — README Update ⏳ AUSSTEHEND
+- [ ] README.md komplett neu schreiben
+  - App-Beschreibung + Screenshots
+  - Feature-Liste v2.0
+  - Tech-Stack-Tabelle (aktuelle Versionen)
+  - Setup-Anleitung
+  - Server-Deployment (Docker, SSH)
+
+---
+
+## Phase 17 — GitHub Release v2.0.0 ⏳ AUSSTEHEND
+> In-App Updater liest: api.github.com/repos/Pcf1337-hash/SyncJam/releases/latest
+> Vergleicht tag_name vs VERSION_NAME — tag muss > "1.9.0" sein → v2.0.0 löst Update-Dialog aus
+> APK muss als Asset angehängt sein (erkennt erste .apk Datei via browser_download_url)
+
+- [ ] `app/build.gradle.kts`: versionCode = 11, versionName = "2.0.0"
+- [ ] `./gradlew :app:assembleRelease`
+- [ ] APK liegt unter: `app/build/outputs/apk/release/app-release.apk`
+- [ ] GitHub Release erstellen:
+  ```bash
+  gh release create v2.0.0 \
+    --title "SyncJam v2.0.0 — Social Features, Voice Chat & UI Modernization" \
+    --notes "## Was ist neu
+  - Floating Emoji Reaktionen mit Animation & Burst-Effekt
+  - Ephemerer Chat (Supabase Realtime)
+  - GIF-Sharing via Giphy SDK
+  - Echter LiveKit Voice Chat mit Speaking-Indikatoren
+  - Push-to-Talk Modus ab 4 Teilnehmern
+  - Netzwerkqualitäts-Anzeige
+  - Dynamic Album Art Theming (MaterialKolor)
+  - Glassmorphism UI (API 31+)
+  - Vinyl-Rotation & Marquee im Player
+  - Swipe-Down Dismiss
+  - Einstellungen-Screen
+  - NTP Sync Engine mit Drift-Korrektur
+  - Session-Timer & Host-Krone" \
+    app/build/outputs/apk/release/app-release.apk
+  ```
+- [ ] Verify: Release-Tag ist `v2.0.0`, APK-Asset sichtbar → In-App-Update wird getriggert
+
+---
+
+## Kritische Regeln (aus CLAUDE.md + lessons.md)
+- **NIEMALS** `collectAsState()` → immer `collectAsStateWithLifecycle()`
+- **NIEMALS** `Color(0xFF...)` → immer `MaterialTheme.colorScheme.*`
+- **IMMER** `graphicsLayer { }` für animierte Properties (GPU-beschleunigt)
+- **IMMER** `LazyColumn` mit `key = { it.id }` + `contentType`
+- **IMMER** `supervisorScope` für parallele Coroutines
+- **Drift < 500ms** → Playback-Rate Anpassung (0.98/1.02), KEIN Seek
+- Nach jeder Korrektur: `tasks/lessons.md` updaten

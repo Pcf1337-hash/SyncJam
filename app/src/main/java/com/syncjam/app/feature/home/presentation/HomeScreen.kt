@@ -1,6 +1,11 @@
 package com.syncjam.app.feature.home.presentation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -52,6 +58,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -75,6 +82,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -99,14 +108,39 @@ fun HomeScreen(
     onJoinSession: () -> Unit,
     onRejoinSession: (code: String, isHost: Boolean) -> Unit = { _, _ -> },
     onJoinPublicSession: (code: String) -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val detectedClipboardCode by viewModel.detectedClipboardCode.collectAsStateWithLifecycle()
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
+    val clipboardManager = LocalClipboardManager.current
     LaunchedEffect(Unit) {
         viewModel.refreshLastSession()
         viewModel.fetchPublicSessions()
+        val clipText = clipboardManager.getText()?.text?.trim()
+        if (clipText != null && clipText.matches(Regex("[A-Z2-9]{6}"))) {
+            viewModel.onClipboardCodeDetected(clipText)
+        }
+    }
+
+    // Clipboard session-code paste dialog
+    detectedClipboardCode?.let { code ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { viewModel.dismissClipboardDialog() },
+            title = { Text("Session beitreten?") },
+            text = { Text("Session-Code $code in der Zwischenablage gefunden. Möchtest du beitreten?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissClipboardDialog()
+                    onJoinSession()
+                }) { Text("Beitreten") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissClipboardDialog() }) { Text("Ignorieren") }
+            }
+        )
     }
 
     uiState.availableUpdate?.let { release ->
@@ -178,7 +212,10 @@ fun HomeScreen(
                 onJoinSession = onJoinSession,
                 modifier = Modifier.padding(padding)
             )
-            3 -> ProfileTab(modifier = Modifier.padding(padding))
+            3 -> ProfileTab(
+                onNavigateToSettings = onNavigateToSettings,
+                modifier = Modifier.padding(padding)
+            )
         }
     }
 }
@@ -294,14 +331,9 @@ private fun DashboardTab(
                     Column(
                         modifier = Modifier.padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            Icons.Default.QueueMusic,
-                            contentDescription = null,
-                            modifier = Modifier.size(40.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        VinylIdleAnimation()
                         Text(
                             "Noch keine Sessions",
                             style = MaterialTheme.typography.bodyMedium,
@@ -761,6 +793,7 @@ private fun PublicSessionCard(session: PublicSessionUi, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProfileTab(
+    onNavigateToSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
     profileViewModel: ProfileViewModel = hiltViewModel()
 ) {
@@ -872,5 +905,48 @@ private fun ProfileTab(
                 ) { Text("Speichern") }
             }
         }
+        item {
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onNavigateToSettings,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text("Einstellungen")
+            }
+        }
+    }
+}
+
+// ── VinylIdleAnimation ────────────────────────────────────────────────────────
+
+@Composable
+fun VinylIdleAnimation(modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "vinyl_idle")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(3000, easing = LinearEasing)),
+        label = "rot"
+    )
+    Box(
+        modifier = modifier.size(120.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .graphicsLayer { rotationZ = rotation }
+                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+        )
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .background(MaterialTheme.colorScheme.surface, CircleShape)
+        )
     }
 }
