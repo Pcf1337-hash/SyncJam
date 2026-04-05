@@ -249,7 +249,7 @@ fun QueueScreen(
                                                 tint = MaterialTheme.colorScheme.onSecondaryContainer
                                             )
                                             Text(
-                                                "Lädt: ${state.title.ifEmpty { state.youtubeId }}",
+                                                "Lädt: ${state.title.takeIf { it.isNotBlank() && it != state.youtubeId } ?: "Wird heruntergeladen…"}",
                                                 style = MaterialTheme.typography.labelMedium,
                                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                                 fontWeight = FontWeight.SemiBold

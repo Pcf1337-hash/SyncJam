@@ -80,7 +80,7 @@ Alle neuen Dateien unter: `app/src/main/java/com/syncjam/app/feature/social/`
 - [x] `presentation/ChatSheet.kt` — auto-scroll, Typing-Indicator AnimatedVisibility, Unread-Badge
 - [x] `presentation/components/GifPicker.kt` — 2-Spalten Grid, Rate-Limit Countdown, Preview-Dialog
 - [x] `presentation/SocialViewModel.kt` — @HiltViewModel, ImmutableList, supervisorScope
-- [ ] Social Features in SessionScreen einbinden ⏳ (nach Theming-Agent)
+- [x] Social Features in SessionScreen einbinden — ChatSheet, SocialViewModel, Chat-Button mit Unread-Badge, FullPlayerScreen-Overlay
 
 ---
 

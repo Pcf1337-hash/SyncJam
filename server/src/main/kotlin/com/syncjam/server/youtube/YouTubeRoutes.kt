@@ -120,7 +120,7 @@ fun Route.youtubeRoutes(
                     session,
                     SyncCommand.YouTubeDownloadStarted(
                         youtubeId = ytId,
-                        title = quickInfo?.title ?: ytId,
+                        title = quickInfo?.title?.takeIf { it.isNotBlank() } ?: "",
                         requestedBy = request.displayName,
                         serverTimestampMs = System.currentTimeMillis()
                     )

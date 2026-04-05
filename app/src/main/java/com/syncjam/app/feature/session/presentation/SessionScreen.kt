@@ -2,7 +2,11 @@ package com.syncjam.app.feature.session.presentation
 
 import android.Manifest
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -53,7 +57,9 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.MusicNote
@@ -108,6 +114,8 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
+import com.syncjam.app.feature.social.presentation.ChatSheet
+import com.syncjam.app.feature.social.presentation.SocialViewModel
 import com.syncjam.app.feature.voice.presentation.VoiceOverlay
 import com.syncjam.app.feature.voice.presentation.VoiceViewModel
 import com.syncjam.app.feature.voice.presentation.components.MuteButton
@@ -119,6 +127,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -150,14 +159,19 @@ fun SessionScreen(
     onOpenPlaylist: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel(),
     voiceViewModel: VoiceViewModel = hiltViewModel(),
-    libraryViewModel: com.syncjam.app.feature.library.presentation.LibraryViewModel = hiltViewModel()
+    libraryViewModel: com.syncjam.app.feature.library.presentation.LibraryViewModel = hiltViewModel(),
+    socialViewModel: SocialViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val voiceState by voiceViewModel.voiceState.collectAsStateWithLifecycle()
+    val socialState by socialViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showAddTrackSheet by remember { mutableStateOf(false) }
+    var showChatSheet by remember { mutableStateOf(false) }
+    var showQrDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var renameInput by remember { mutableStateOf("") }
+    var showFullPlayer by remember { mutableStateOf(false) }
 
     // ── RECORD_AUDIO Permission + Push-to-Talk ────────────────────────────────
     val micPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
@@ -199,6 +213,7 @@ fun SessionScreen(
                     displayName = displayName
                 )
             )
+            socialViewModel.joinSession(sessionCode)
         }
     }
 
@@ -254,6 +269,41 @@ fun SessionScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) { Text("Abbrechen") }
+            }
+        )
+    }
+
+    // QR-Code Dialog
+    if (showQrDialog && uiState.sessionCode.isNotEmpty()) {
+        SessionQrDialog(
+            sessionCode = uiState.sessionCode,
+            onDismiss = { showQrDialog = false },
+            onShare = { qrBitmap ->
+                val shareText = "Komm in meine SyncJam Session! 🎵\nCode: ${uiState.sessionCode}\nsyncjam://join/${uiState.sessionCode}"
+                val imageUri: Uri? = if (qrBitmap != null) {
+                    try {
+                        val file = File(context.cacheDir, "syncjam_qr_${uiState.sessionCode}.png")
+                        FileOutputStream(file).use { qrBitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                    } catch (e: Exception) { null }
+                } else null
+
+                val intent = if (imageUri != null) {
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "image/png"
+                        putExtra(Intent.EXTRA_STREAM, imageUri)
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                        putExtra(Intent.EXTRA_SUBJECT, "SyncJam Session ${uiState.sessionCode}")
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                } else {
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                        putExtra(Intent.EXTRA_SUBJECT, "SyncJam Session ${uiState.sessionCode}")
+                    }
+                }
+                context.startActivity(Intent.createChooser(intent, "Session teilen"))
             }
         )
     }
@@ -351,6 +401,9 @@ fun SessionScreen(
                     },
                     actions = {
                         if (uiState.sessionCode.isNotEmpty()) {
+                            IconButton(onClick = { showQrDialog = true }) {
+                                Icon(Icons.Default.QrCode, "QR-Code")
+                            }
                             IconButton(onClick = {
                                 val shareText = "Komm in meine SyncJam Session! 🎵\nCode: ${uiState.sessionCode}\nsyncjam://join/${uiState.sessionCode}"
                                 val intent = Intent(Intent.ACTION_SEND).apply {
@@ -376,7 +429,9 @@ fun SessionScreen(
                         onReaction = { emoji -> viewModel.onEvent(SessionEvent.SendReaction(emoji)) },
                         onMicPress = handlePttPress,
                         onMicRelease = handlePttRelease,
-                        onVolumeChange = { viewModel.onEvent(SessionEvent.SetVolume(it)) }
+                        onVolumeChange = { viewModel.onEvent(SessionEvent.SetVolume(it)) },
+                        onOpenChat = { showChatSheet = true },
+                        unreadMessages = socialState.unreadCount
                 )
             }
         ) { padding ->
@@ -393,6 +448,7 @@ fun SessionScreen(
                 AlbumArtSection(
                     isPlaying = uiState.isPlaying,
                     currentTrack = uiState.currentTrack,
+                    onExpand = { if (uiState.currentTrack != null) showFullPlayer = true },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 8.dp)
@@ -528,6 +584,26 @@ fun SessionScreen(
             }
         }
 
+        // Full player overlay
+        if (showFullPlayer) {
+            uiState.currentTrack?.let { track ->
+                val progress = if (track.durationMs > 0) uiState.positionMs / track.durationMs.toFloat() else 0f
+                com.syncjam.app.feature.player.presentation.FullPlayerScreen(
+                    trackTitle = track.title,
+                    trackArtist = track.artist,
+                    albumArtUri = track.albumArtUri,
+                    isPlaying = uiState.isPlaying,
+                    playbackProgress = progress.coerceIn(0f, 1f),
+                    onPlayPause = { viewModel.onEvent(SessionEvent.TogglePlayPause) },
+                    onSkipNext = { viewModel.onEvent(SessionEvent.SendTrackEnded(track.id)) },
+                    onSkipPrevious = {},
+                    onSeek = { fraction -> viewModel.onEvent(SessionEvent.Seek((fraction * track.durationMs).toLong())) },
+                    onDismiss = { showFullPlayer = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
         // Floating emoji reactions — rendered on top of everything
         FloatingReactionOverlay(reactions = uiState.floatingReactions)
 
@@ -556,6 +632,24 @@ fun SessionScreen(
                     )
                 },
                 onDismiss = { showAddTrackSheet = false }
+            )
+        }
+
+        // Chat sheet
+        if (showChatSheet) {
+            ChatSheet(
+                messages = socialState.messages,
+                typingUser = socialState.typingUser,
+                onSend = { text ->
+                    socialViewModel.sendMessage(
+                        text = text,
+                        senderName = displayName,
+                        senderId = uiState.currentUserId
+                    )
+                },
+                onTyping = { socialViewModel.onTyping(uiState.currentUserId, displayName) },
+                onOpened = { socialViewModel.onChatOpened() },
+                onDismiss = { showChatSheet = false }
             )
         }
 
@@ -719,7 +813,9 @@ private fun PlayerBottomBar(
     onReaction: (String) -> Unit,
     onMicPress: () -> Unit,
     onMicRelease: () -> Unit,
-    onVolumeChange: (Float) -> Unit
+    onVolumeChange: (Float) -> Unit,
+    onOpenChat: () -> Unit = {},
+    unreadMessages: Int = 0
 ) {
     val focusManager = LocalFocusManager.current
     var textInput by remember { mutableStateOf("") }
@@ -894,6 +990,21 @@ private fun PlayerBottomBar(
                     Spacer(Modifier.width(6.dp))
                     Text("Queue")
                 }
+
+                FilledTonalIconButton(
+                    onClick = onOpenChat,
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    BadgedBox(
+                        badge = {
+                            if (unreadMessages > 0) {
+                                Badge { Text("$unreadMessages") }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Forum, "Chat", Modifier.size(22.dp))
+                    }
+                }
             }
         }
     }
@@ -905,6 +1016,7 @@ private fun PlayerBottomBar(
 private fun AlbumArtSection(
     isPlaying: Boolean,
     currentTrack: CurrentTrackUi?,
+    onExpand: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scale by animateFloatAsState(
@@ -948,6 +1060,7 @@ private fun AlbumArtSection(
                 .graphicsLayer { scaleX = cardScale; scaleY = cardScale }
                 .shadow(shadowElevation.dp, RoundedCornerShape(20.dp))
                 .clip(RoundedCornerShape(20.dp))
+                .clickable(onClick = onExpand)
         ) {
             when {
                 albumArtUri != null -> {
@@ -1829,4 +1942,83 @@ private fun AddPlaylistPickerList(
             }
         }
     }
+}
+
+// ── QR-Code Dialog ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun SessionQrDialog(
+    sessionCode: String,
+    onDismiss: () -> Unit,
+    onShare: (Bitmap?) -> Unit
+) {
+    val qrBitmap: Bitmap? = remember(sessionCode) {
+        try {
+            val writer = com.google.zxing.qrcode.QRCodeWriter()
+            val content = "syncjam://join/$sessionCode"
+            val matrix = writer.encode(content, com.google.zxing.BarcodeFormat.QR_CODE, 512, 512)
+            val bmp = Bitmap.createBitmap(512, 512, Bitmap.Config.RGB_565)
+            for (x in 0 until 512) {
+                for (y in 0 until 512) {
+                    bmp.setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+                }
+            }
+            bmp
+        } catch (e: Exception) { null }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Session beitreten", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Code: $sessionCode",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(16.dp))
+                if (qrBitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = qrBitmap.asImageBitmap(),
+                        contentDescription = "QR-Code für Session $sessionCode",
+                        modifier = Modifier
+                            .size(240.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.size(240.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("QR-Code konnte nicht generiert werden", textAlign = TextAlign.Center)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Scanne diesen Code oder teile ihn mit anderen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        },
+        confirmButton = {
+            FilledTonalButton(onClick = { onShare(qrBitmap); onDismiss() }) {
+                Icon(Icons.Default.Share, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Teilen")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Schließen") }
+        }
+    )
 }

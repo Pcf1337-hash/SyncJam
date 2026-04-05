@@ -142,8 +142,14 @@ class LibraryViewModel @Inject constructor(
             _uiState.update { it.copy(isDownloadingCovers = true) }
             try {
                 withContext(Dispatchers.IO) { coverArtDownloader.downloadMissingCovers() }
-                // Reload tracks to show new cover URLs
-                loadFromCache()
+                // Reload only if there are tracks — avoids triggering scanLibrary() loop when DB is empty
+                val entities = withContext(Dispatchers.IO) { dao.getAllTracksOnce() }
+                if (entities.isNotEmpty()) {
+                    val sorted = entities.map { it.toUi() }
+                        .applySorting(_uiState.value.sortOption)
+                        .toImmutableList()
+                    _uiState.update { it.copy(tracks = sorted) }
+                }
             } catch (e: Exception) {
                 Log.w("LibraryViewModel", "Cover download failed: ${e.message}")
             } finally {
