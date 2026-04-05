@@ -117,7 +117,12 @@ class SessionViewModel @Inject constructor(
                     else (state.positionMs + 100L).coerceAtMost(state.currentTrack.durationMs)
 
                     if (newPos >= state.currentTrack.durationMs && state.currentTrack.durationMs > 0) {
-                        launch { sendTrackEnded(state.currentTrack.id) }
+                        // Only the host auto-advances — non-hosts wait for Play command from server.
+                        // Also stop the ticker so TrackEnded is not sent multiple times.
+                        if (isHostSession) {
+                            launch { sendTrackEnded(state.currentTrack.id) }
+                            return@update state.copy(positionMs = newPos, isPlaying = false)
+                        }
                     }
                     state.copy(positionMs = newPos)
                 }
@@ -230,6 +235,13 @@ class SessionViewModel @Inject constructor(
             is SessionEvent.SendDirectMessage -> sendDirectMessage(event.targetUserId, event.message)
             is SessionEvent.DismissKicked -> { leaveSession() }
             is SessionEvent.DismissDirectMessage -> _uiState.update { it.copy(directMessage = null) }
+            is SessionEvent.ApproveTrack -> sendCommand(SyncCommand.TrackApproved(event.requestId))
+            is SessionEvent.RejectTrack -> {
+                sendCommand(SyncCommand.TrackRejected(event.requestId, event.reason))
+                _uiState.update { state ->
+                    state.copy(pendingApprovals = state.pendingApprovals.filter { it.requestId != event.requestId }.toImmutableList())
+                }
+            }
         }
     }
 
@@ -512,9 +524,22 @@ class SessionViewModel @Inject constructor(
             }
 
             is SyncCommand.Play -> {
-                _uiState.update { it.copy(isPlaying = true, positionMs = command.positionMs) }
-                val track = _uiState.value.currentTrack
-                if (track != null) loadAndPlay(track, command.positionMs)
+                // Find the correct track from our playlist — currentTrack in state may still be the old one
+                val matchingEntry = _uiState.value.playlist.find { it.trackId == command.trackId }
+                val newTrack: CurrentTrackUi? = when {
+                    matchingEntry != null -> matchingEntry.toCurrentTrackUi()
+                    _uiState.value.currentTrack?.id == command.trackId -> _uiState.value.currentTrack
+                    else -> null
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        isPlaying = true,
+                        positionMs = command.positionMs,
+                        currentTrack = newTrack ?: state.currentTrack
+                    )
+                }
+                val trackToPlay = newTrack ?: _uiState.value.currentTrack
+                if (trackToPlay != null) loadAndPlay(trackToPlay, command.positionMs)
                 startPositionTicker()
             }
 
@@ -623,6 +648,46 @@ class SessionViewModel @Inject constructor(
                 }
             }
 
+            // ── Track Approval ────────────────────────────────────────────────
+            is SyncCommand.TrackPendingApproval -> {
+                // Host receives this: a non-host wants to add a track
+                val pending = PendingTrackApprovalUi(
+                    requestId = command.requestId,
+                    title = command.trackInfo.title,
+                    artist = command.trackInfo.artist,
+                    requestedBy = command.requestedBy,
+                    requestedByName = command.requestedByName,
+                    source = if (command.source == "YOUTUBE") TrackSourceUi.YOUTUBE else TrackSourceUi.LOCAL,
+                    youtubeId = command.youtubeId,
+                    thumbnailUrl = command.thumbnailUrl
+                )
+                _uiState.update { state ->
+                    state.copy(pendingApprovals = (state.pendingApprovals + pending).toImmutableList())
+                }
+            }
+
+            is SyncCommand.TrackApproved -> {
+                // Server → approver (host): remove from pending list
+                // Server → requester: remove from own-pending list
+                _uiState.update { state ->
+                    state.copy(
+                        pendingApprovals = state.pendingApprovals.filter { it.requestId != command.requestId }.toImmutableList(),
+                        ownPendingTrackIds = state.ownPendingTrackIds.filter { it != command.requestId }.toImmutableList()
+                    )
+                }
+            }
+
+            is SyncCommand.TrackRejected -> {
+                // Server → requester: track was rejected by host
+                _uiState.update { state ->
+                    state.copy(
+                        ownPendingTrackIds = state.ownPendingTrackIds.filter { it != command.requestId }.toImmutableList(),
+                        error = if (command.reason.isNotEmpty()) "Track abgelehnt: ${command.reason}"
+                                else "Dein Track wurde vom Host abgelehnt."
+                    )
+                }
+            }
+
             else -> {}
         }
     }
@@ -687,6 +752,12 @@ class SessionViewModel @Inject constructor(
                 Log.w(TAG, "Art upload failed: ${e.message}")
             }
             _uiState.update { it.copy(isUploadingTrack = false) }
+            // Track if we're a non-host — the server will send it to the host for approval
+            if (!isHostSession) {
+                _uiState.update { state ->
+                    state.copy(ownPendingTrackIds = (state.ownPendingTrackIds + requestId).toImmutableList())
+                }
+            }
             sendCommand(
                 SyncCommand.AddToQueue(
                     requestId = requestId,
@@ -869,7 +940,17 @@ class SessionViewModel @Inject constructor(
         source = if (source == "YOUTUBE") TrackSourceUi.YOUTUBE else TrackSourceUi.LOCAL,
         youtubeId = youtubeId,
         thumbnailUrl = thumbnailUrl,
+        streamUrl = trackInfo.streamUrl,
         isCurrent = isCurrent
+    )
+
+    private fun QueueEntryUi.toCurrentTrackUi() = CurrentTrackUi(
+        id = trackId,
+        title = title,
+        artist = artist,
+        durationMs = durationMs,
+        albumArtUri = thumbnailUrl,
+        streamUrl = streamUrl
     )
 
     private fun ParticipantInfo.toUi(): ParticipantUi = ParticipantUi(

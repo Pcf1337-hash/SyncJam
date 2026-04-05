@@ -183,4 +183,33 @@ sealed interface SyncCommand {
 
     @Serializable @SerialName("direct_message")
     data class DirectMessage(val fromUserId: String, val fromName: String, val message: String, val serverTimestampMs: Long = 0L) : SyncCommand
+
+    // ── Track Approval (Non-Host → Host) ─────────────────────────────────────
+    /** Server → Host: a non-host wants to add this track; requires approval. */
+    @Serializable @SerialName("track_pending_approval")
+    data class TrackPendingApproval(
+        val requestId: String,
+        val trackInfo: TrackInfo,
+        val requestedBy: String,
+        val requestedByName: String,
+        val source: String = "LOCAL",
+        val youtubeId: String? = null,
+        val thumbnailUrl: String? = null,
+        val serverTimestampMs: Long = 0L
+    ) : SyncCommand
+
+    /** Host → Server: approve a pending track request. */
+    @Serializable @SerialName("track_approved")
+    data class TrackApproved(
+        val requestId: String,
+        val serverTimestampMs: Long = 0L
+    ) : SyncCommand
+
+    /** Host → Server: reject a pending track request. */
+    @Serializable @SerialName("track_rejected")
+    data class TrackRejected(
+        val requestId: String,
+        val reason: String = "",
+        val serverTimestampMs: Long = 0L
+    ) : SyncCommand
 }

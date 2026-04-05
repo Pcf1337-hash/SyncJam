@@ -232,6 +232,34 @@ fun SessionScreen(
         )
     }
 
+    // Track approval dialog (host only) — shown for each pending approval sequentially
+    uiState.pendingApprovals.firstOrNull()?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { /* force decision */ },
+            title = { Text("Track-Anfrage") },
+            text = {
+                Column {
+                    Text("${pending.requestedByName} möchte einen Track hinzufügen:")
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "${pending.title} — ${pending.artist}",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.onEvent(SessionEvent.ApproveTrack(pending.requestId)) }) {
+                    Text("Hinzufügen")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onEvent(SessionEvent.RejectTrack(pending.requestId)) }) {
+                    Text("Ablehnen")
+                }
+            }
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {

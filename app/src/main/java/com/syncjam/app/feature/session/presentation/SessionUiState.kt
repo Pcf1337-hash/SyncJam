@@ -29,10 +29,26 @@ data class SessionUiState(
     val musicVolume: Float = 1f,
     val floatingReactions: ImmutableList<FloatingReactionUi> = persistentListOf(),
     val kickedReason: String? = null,
-    val directMessage: DirectMessageNotification? = null
+    val directMessage: DirectMessageNotification? = null,
+    /** Tracks awaiting host approval (only populated for the host) */
+    val pendingApprovals: ImmutableList<PendingTrackApprovalUi> = persistentListOf(),
+    /** requestIds of own tracks that are awaiting host approval (non-host view) */
+    val ownPendingTrackIds: ImmutableList<String> = persistentListOf()
 ) {
     val isCurrentUserAdmin: Boolean get() = adminId.isNotEmpty() && adminId == currentUserId
 }
+
+@Immutable
+data class PendingTrackApprovalUi(
+    val requestId: String,
+    val title: String,
+    val artist: String,
+    val requestedBy: String,
+    val requestedByName: String,
+    val source: TrackSourceUi,
+    val youtubeId: String? = null,
+    val thumbnailUrl: String? = null
+)
 
 @Immutable
 data class CurrentTrackUi(
@@ -58,6 +74,8 @@ data class QueueEntryUi(
     val source: TrackSourceUi,
     val youtubeId: String?,
     val thumbnailUrl: String?,
+    /** HTTP stream URL if uploaded to server; null for local-only or YouTube */
+    val streamUrl: String? = null,
     val isCurrent: Boolean = false
 )
 
@@ -131,4 +149,6 @@ sealed interface SessionEvent {
     data class SendDirectMessage(val targetUserId: String, val message: String) : SessionEvent
     data object DismissKicked : SessionEvent
     data object DismissDirectMessage : SessionEvent
+    data class ApproveTrack(val requestId: String) : SessionEvent
+    data class RejectTrack(val requestId: String, val reason: String = "") : SessionEvent
 }

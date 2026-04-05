@@ -34,7 +34,9 @@ data class SessionState(
     val clients: ConcurrentHashMap<String, ConnectedClient> = ConcurrentHashMap(),
     val bannedUserIds: MutableSet<String> = mutableSetOf(),
     /** UserIds the admin has server-muted (cannot speak) */
-    val mutedByAdmin: MutableSet<String> = mutableSetOf()
+    val mutedByAdmin: MutableSet<String> = mutableSetOf(),
+    /** Pending track requests from non-hosts waiting for host approval. requestId → AddToQueue */
+    val pendingApprovals: ConcurrentHashMap<String, com.syncjam.server.model.SyncCommand.AddToQueue> = ConcurrentHashMap()
 ) {
     fun getParticipants(): List<ParticipantInfo> = clients.values.map {
         ParticipantInfo(it.userId, it.displayName, it.avatarUrl, it.isHost, it.userId == adminId)

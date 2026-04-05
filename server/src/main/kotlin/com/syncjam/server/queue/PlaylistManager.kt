@@ -35,11 +35,20 @@ class PlaylistManager {
 
     fun addTrack(sessionCode: String, track: PlaylistTrack): List<PlaylistTrack> {
         val list = playlists.getOrPut(sessionCode) { mutableListOf() }
+        val curIdx = currentIndex.getOrPut(sessionCode) { AtomicInteger(0) }.get()
         synchronized(list) {
             list.add(track)
-            list.sortByDescending { it.score }
+            // Only sort the unplayed portion — never move items before the current index
+            sortUnplayed(list, curIdx)
         }
         return list.toList()
+    }
+
+    /** Stable sort only the items at [fromIndex..end] by descending score. */
+    private fun sortUnplayed(list: MutableList<PlaylistTrack>, fromIndex: Int) {
+        if (fromIndex >= list.size) return
+        val unplayed = list.subList(fromIndex, list.size).sortedByDescending { it.score }
+        for (i in unplayed.indices) list[fromIndex + i] = unplayed[i]
     }
 
     fun removeTrack(sessionCode: String, requestId: String): List<PlaylistTrack> {
@@ -64,6 +73,7 @@ class PlaylistManager {
         sessionVotes[voteKey] = voteType
 
         val list = playlists.getOrPut(sessionCode) { mutableListOf() }
+        val curIdx = currentIndex.getOrPut(sessionCode) { AtomicInteger(0) }.get()
         synchronized(list) {
             val idx = list.indexOfFirst { it.requestId == requestId }
             if (idx >= 0) {
@@ -71,7 +81,8 @@ class PlaylistManager {
                     .filter { it.key.startsWith("$requestId:") }
                     .sumOf { it.value }
                 list[idx] = list[idx].copy(score = newScore)
-                list.sortByDescending { it.score }
+                // Only re-sort the unplayed portion
+                sortUnplayed(list, curIdx)
             }
         }
         return list.toList()

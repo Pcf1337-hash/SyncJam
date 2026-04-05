@@ -334,7 +334,11 @@ private suspend fun handleCommand(
 
             // ── Playback ──────────────────────────────────────────────────────
             is SyncCommand.Play -> {
-                session.currentTrack = session.currentTrack?.copy(id = command.trackId)
+                // Always store the FULL track info (with streamUrl) so joining clients get it via StateSnapshot
+                val fullTrack = playlistManager.getPlaylist(sessionCode)
+                    .find { it.trackInfo.id == command.trackId }?.trackInfo
+                session.currentTrack = fullTrack
+                    ?: session.currentTrack?.copy(id = command.trackId)
                     ?: TrackInfo(command.trackId, "", "", 0)
                 session.positionMs = command.positionMs
                 session.isPlaying = true
@@ -367,22 +371,48 @@ private suspend fun handleCommand(
             }
 
             is SyncCommand.TrackEnded -> {
-                // Auto-advance to the next track in the collaborative playlist
+                // Only the host/admin should trigger auto-advance — ignore duplicates from non-hosts
+                if (client.userId != session.hostId && client.userId != session.adminId) return
                 val next = playlistManager.advanceToNext(sessionCode)
                 if (next != null) {
-                    session.currentTrack = next.trackInfo
+                    session.currentTrack = next.trackInfo  // includes streamUrl
                     session.positionMs = 0L
                     session.isPlaying = true
                     session.lastUpdateTime = serverTs
+                    // Send PlaylistUpdate FIRST so clients update currentTrack before Play arrives
+                    syncAndBroadcastPlaylist(sessionCode, session, serverTs)
                     broadcaster.broadcast(session, SyncCommand.Play(next.trackInfo.id, 0L, serverTs))
                 } else {
                     session.isPlaying = false
+                    syncAndBroadcastPlaylist(sessionCode, session, serverTs)
                 }
-                syncAndBroadcastPlaylist(sessionCode, session, serverTs)
             }
 
             // ── Collaborative Playlist ────────────────────────────────────────
             is SyncCommand.AddToQueue -> {
+                val isHostOrAdmin = client.userId == session.hostId || client.userId == session.adminId
+                if (!isHostOrAdmin) {
+                    // Non-host: park in pending list, ask host to approve
+                    session.pendingApprovals[command.requestId] = command
+                    val hostClient = session.clients[session.hostId]
+                        ?: session.clients[session.adminId]
+                    if (hostClient != null) {
+                        broadcaster.sendTo(
+                            hostClient,
+                            SyncCommand.TrackPendingApproval(
+                                requestId = command.requestId,
+                                trackInfo = command.trackInfo,
+                                requestedBy = command.requestedBy,
+                                requestedByName = command.requestedByName,
+                                source = command.source,
+                                youtubeId = command.youtubeId,
+                                thumbnailUrl = command.thumbnailUrl,
+                                serverTimestampMs = serverTs
+                            )
+                        )
+                    }
+                    return
+                }
                 val track = PlaylistTrack(
                     requestId = command.requestId,
                     trackInfo = command.trackInfo,
@@ -396,6 +426,38 @@ private suspend fun handleCommand(
                 )
                 playlistManager.addTrack(sessionCode, track)
                 syncAndBroadcastPlaylist(sessionCode, session, serverTs)
+            }
+
+            is SyncCommand.TrackApproved -> {
+                if (client.userId != session.hostId && client.userId != session.adminId) return
+                val pending = session.pendingApprovals.remove(command.requestId) ?: return
+                val track = PlaylistTrack(
+                    requestId = pending.requestId,
+                    trackInfo = pending.trackInfo,
+                    score = 0,
+                    requestedBy = pending.requestedBy,
+                    requestedByName = pending.requestedByName,
+                    source = if (pending.source == "YOUTUBE") TrackSource.YOUTUBE else TrackSource.LOCAL,
+                    youtubeId = pending.youtubeId,
+                    thumbnailUrl = pending.thumbnailUrl,
+                    addedAt = serverTs
+                )
+                playlistManager.addTrack(sessionCode, track)
+                syncAndBroadcastPlaylist(sessionCode, session, serverTs)
+                // Notify the original requester
+                val requester = session.clients[pending.requestedBy]
+                if (requester != null) {
+                    broadcaster.sendTo(requester, SyncCommand.TrackApproved(command.requestId, serverTs))
+                }
+            }
+
+            is SyncCommand.TrackRejected -> {
+                if (client.userId != session.hostId && client.userId != session.adminId) return
+                val pending = session.pendingApprovals.remove(command.requestId) ?: return
+                val requester = session.clients[pending.requestedBy]
+                if (requester != null) {
+                    broadcaster.sendTo(requester, SyncCommand.TrackRejected(command.requestId, command.reason, serverTs))
+                }
             }
 
             is SyncCommand.RemoveFromQueue -> {
