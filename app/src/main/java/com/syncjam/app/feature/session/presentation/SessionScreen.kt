@@ -291,15 +291,7 @@ fun SessionScreen(
                 )
             },
             bottomBar = {
-                Column {
-                    // VoiceOverlay im bottomBar — Scaffold passt Content-Padding automatisch an,
-                    // sodass die Waveform NIEMALS verdeckt wird.
-                    VoiceOverlay(
-                        voiceState = voiceState,
-                        onPttPress = handlePttPress,
-                        onPttRelease = handlePttRelease
-                    )
-                    PlayerBottomBar(
+                PlayerBottomBar(
                         uiState = uiState,
                         onTogglePlayPause = { viewModel.onEvent(SessionEvent.TogglePlayPause) },
                         onSkip = { uiState.currentTrack?.let { viewModel.onEvent(SessionEvent.SendTrackEnded(it.id)) } },
@@ -309,8 +301,7 @@ fun SessionScreen(
                         onMicPress = handlePttPress,
                         onMicRelease = handlePttRelease,
                         onVolumeChange = { viewModel.onEvent(SessionEvent.SetVolume(it)) }
-                    )
-                }
+                )
             }
         ) { padding ->
             Column(
@@ -463,6 +454,14 @@ fun SessionScreen(
 
         // Floating emoji reactions — rendered on top of everything
         FloatingReactionOverlay(reactions = uiState.floatingReactions)
+
+        // Floating speaking-avatar — top-end corner, only when voice is active
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopEnd
+        ) {
+            VoiceOverlay(voiceState = voiceState)
+        }
 
         // Add Track Sheet
         if (showAddTrackSheet) {

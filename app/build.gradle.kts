@@ -15,8 +15,8 @@ android {
         applicationId = "com.syncjam.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "2.1.1"
+        versionCode = 14
+        versionName = "2.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"

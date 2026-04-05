@@ -4,126 +4,94 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.syncjam.app.feature.voice.domain.model.VoiceConnectionState
 import com.syncjam.app.feature.voice.domain.model.VoiceState
-import com.syncjam.app.feature.voice.presentation.components.MuteButton
-import com.syncjam.app.feature.voice.presentation.components.VoiceParticipantChip
+import com.syncjam.app.feature.voice.presentation.components.SpeakingIndicator
 
 /**
- * Floating-Overlay das über dem PlayerBottomBar angezeigt wird,
- * wenn Voice aktiv ist (Stub-Modus oder echt).
+ * Floating Avatar-Overlay — taucht auf wenn jemand spricht.
  *
- * Enthält:
- * - Status-Label (Connecting / Voice aktiv / Voice Demo)
- * - Teilnehmer-Chips mit pulsierendem Speaking-Indikator + Netzwerkqualitäts-Balken
- * - Push-to-Talk Button (immer sichtbar wenn aktiv; prominent wenn PTT-Modus)
- *
- * PTT-Modus-Verhalten:
- * - Wenn [voiceState].isPttRecommended (> 4 Teilnehmer): Button ist größer + trägt Label
- * - Wenn <= 4 Teilnehmer: kompakter Button ohne Label (normaler Mute-Toggle-Stil)
+ * Zeigt den Avatar des gerade sprechenden Teilnehmers mit pulsierendem Ring +
+ * Name-Label. Kein Bottom-Bar, kein Mute-Button hier — der Mute-Button liegt
+ * im PlayerBottomBar.
  */
 @Composable
 fun VoiceOverlay(
     voiceState: VoiceState,
-    onPttPress: () -> Unit,
-    onPttRelease: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Prefer a speaking remote participant; fall back to local if local is speaking.
+    val speakingParticipant = voiceState.participants.firstOrNull { it.isSpeaking && !it.isLocal }
+        ?: voiceState.participants.firstOrNull { it.isSpeaking }
+
+    val visible = voiceState.isActive && speakingParticipant != null
+
     AnimatedVisibility(
-        visible = voiceState.isActive,
-        enter = slideInVertically(tween(280)) { it } + fadeIn(tween(280)),
-        exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(200)),
+        visible = visible,
+        enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.8f),
+        exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.8f),
         modifier = modifier
     ) {
-        Surface(
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.97f),
-            tonalElevation = 4.dp,
-            shadowElevation = 8.dp
-        ) {
+        speakingParticipant?.let { participant ->
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(12.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val statusLabel = when (voiceState.connectionState) {
-                        VoiceConnectionState.Connecting   -> "Verbinde…"
-                        VoiceConnectionState.Connected    -> "Voice aktiv"
-                        VoiceConnectionState.StubMode     -> "Voice aktiv"
-                        is VoiceConnectionState.Error     -> "Fehler"
-                        VoiceConnectionState.Disconnected -> ""
-                    }
-                    val statusColor = when (voiceState.connectionState) {
-                        is VoiceConnectionState.Error -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.primary
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = statusLabel,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = statusColor
-                        )
-                        // PTT-Hinweis wenn mehr als 4 Teilnehmer
-                        if (voiceState.isPttRecommended) {
-                            Text(
-                                text = "Halten zum Sprechen",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                SpeakingIndicator(isSpeaking = true, size = 48.dp) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                color = if (participant.isLocal)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.tertiary,
+                                shape = CircleShape
                             )
-                        }
-                    }
-
-                    Spacer(Modifier.width(8.dp))
-
-                    // PTT-Button: Größe variiert je nach PTT-Modus
-                    MuteButton(
-                        isMuted = voiceState.isMicMuted,
-                        onPress = onPttPress,
-                        onRelease = onPttRelease,
-                        size = if (voiceState.isPttRecommended) 52.dp else 40.dp
-                    )
-                }
-
-                // Teilnehmer-Chips mit Speaking-Indikatoren + Netzwerkqualitäts-Balken
-                if (voiceState.participants.isNotEmpty()) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(top = 8.dp)
                     ) {
-                        items(
-                            items = voiceState.participants,
-                            key = { it.sid },
-                            contentType = { "voice_participant" }
-                        ) { participant ->
-                            VoiceParticipantChip(participant = participant)
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = if (participant.isLocal)
+                                MaterialTheme.colorScheme.onPrimary
+                            else
+                                MaterialTheme.colorScheme.onTertiary,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
+                }
+                Spacer(Modifier.height(4.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f)
+                ) {
+                    Text(
+                        text = if (participant.isLocal) "Du" else participant.displayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
                 }
             }
         }

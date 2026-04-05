@@ -1,6 +1,7 @@
 package com.syncjam.app.core.di
 
 import android.content.Context
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.exoplayer.ExoPlayer
 import com.syncjam.app.core.auth.SessionPrefs
@@ -17,9 +18,14 @@ object AppModule {
     @Provides
     @Singleton
     fun provideExoPlayer(@ApplicationContext context: Context): ExoPlayer {
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
         return ExoPlayer.Builder(context)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setHandleAudioBecomingNoisy(true)
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             .build()
     }
 

@@ -40,11 +40,11 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        mediaSession?.run {
-            player.release()
-            release()
-            mediaSession = null
-        }
+        // Only release the MediaSession — the player is a Hilt singleton shared with
+        // SessionViewModel and must NOT be released here, otherwise all future
+        // loadAndPlay() calls would fail silently after the service stops.
+        mediaSession?.release()
+        mediaSession = null
         super.onDestroy()
     }
 }
