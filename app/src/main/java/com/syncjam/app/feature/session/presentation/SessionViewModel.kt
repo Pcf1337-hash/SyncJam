@@ -154,7 +154,11 @@ class SessionViewModel @Inject constructor(
 
     private fun loadAndPlay(track: CurrentTrackUi, positionMs: Long) {
         updateDominantColor(track.albumArtUri?.let { Uri.parse(it) })
-        val uri = getTrackUri(track) ?: return
+        val uri = getTrackUri(track) ?: run {
+            Log.w(TAG, "loadAndPlay: no URI for track ${track.id} (streamUrl=${track.streamUrl}) — track unavailable")
+            _uiState.update { it.copy(error = "Track nicht verfügbar: ${track.title}", isPlaying = false) }
+            return
+        }
         viewModelScope.launch(Dispatchers.Main) {
             try {
                 val mediaItem = MediaItem.fromUri(uri)
@@ -405,7 +409,7 @@ class SessionViewModel @Inject constructor(
 
     // ── WebSocket Connection ──────────────────────────────────────────────────
 
-    private fun connectWebSocket(code: String, userId: String, displayName: String, isHost: Boolean) {
+    private fun connectWebSocket(code: String, userId: String, displayName: String, isHost: Boolean, attempt: Int = 0) {
         wsJob?.cancel()
         wsJob = viewModelScope.launch {
             val encodedName = URLEncoder.encode(displayName, "UTF-8")
@@ -446,11 +450,13 @@ class SessionViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "WebSocket error in $code: ${e.message}", e)
+                Log.e(TAG, "WebSocket error in $code (attempt $attempt): ${e.message}", e)
                 _uiState.update { it.copy(isConnected = false, error = "Verbindung unterbrochen…") }
-                delay(3000)
                 if (currentSessionCode.isNotEmpty()) {
-                    connectWebSocket(currentSessionCode, currentUserId, currentDisplayName, isHost)
+                    // Exponential backoff: 2s, 4s, 8s, 16s … capped at 30s
+                    val delayMs = minOf(2000L * (1L shl attempt.coerceAtMost(4)), 30_000L)
+                    delay(delayMs)
+                    connectWebSocket(currentSessionCode, currentUserId, currentDisplayName, isHost, attempt + 1)
                 }
             }
         }
@@ -466,6 +472,9 @@ class SessionViewModel @Inject constructor(
                     .toImmutableList()
 
                 _uiState.update { state ->
+                    // Pending tracks already in the playlist were approved while we were offline
+                    val approvedIds = command.queue.map { it.requestId }.toSet()
+                    val stillPending = state.ownPendingTrackIds.filter { it !in approvedIds }.toImmutableList()
                     state.copy(
                         sessionId = command.sessionId,
                         hostId = command.hostId,
@@ -475,7 +484,8 @@ class SessionViewModel @Inject constructor(
                         isPlaying = command.isPlaying,
                         playlist = command.queue.mapIndexed { i, q -> q.toUi(i == 0 && command.isPlaying) }.toImmutableList(),
                         participants = filteredParticipants,
-                        participantCount = command.participants.size
+                        participantCount = command.participants.size,
+                        ownPendingTrackIds = stillPending
                     )
                 }
                 val track = command.currentTrack?.toUi(Constants.SYNC_SERVER_HTTP_URL)
@@ -493,7 +503,10 @@ class SessionViewModel @Inject constructor(
                 val wasPlaying = _uiState.value.isPlaying
                 val currentIdx = command.currentIndex
                 _uiState.update { state ->
+                    val approvedIds = command.tracks.map { it.requestId }.toSet()
+                    val stillPending = state.ownPendingTrackIds.filter { it !in approvedIds }.toImmutableList()
                     state.copy(
+                        ownPendingTrackIds = stillPending,
                         playlist = command.tracks.mapIndexed { i, q -> q.toUi(i == currentIdx) }.toImmutableList(),
                         currentQueueIndex = currentIdx,
                         currentTrack = command.tracks.getOrNull(currentIdx)?.trackInfo
@@ -645,6 +658,21 @@ class SessionViewModel @Inject constructor(
                         delay(6000L)
                         _uiState.update { if (it.directMessage?.fromName == command.fromName && it.directMessage.message == command.message) it.copy(directMessage = null) else it }
                     }
+                }
+            }
+
+            is SyncCommand.HostDisconnected -> {
+                // If this client is the admin, promote to effective host so TrackEnded fires correctly
+                if (command.adminId == currentUserId && !isHostSession) {
+                    isHostSession = true
+                    Log.i(TAG, "Host disconnected — promoted to effective host (admin)")
+                }
+                _uiState.update { state ->
+                    state.copy(
+                        participants = state.participants
+                            .filter { it.userId != command.hostId }
+                            .toImmutableList()
+                    )
                 }
             }
 

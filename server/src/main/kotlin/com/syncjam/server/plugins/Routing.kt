@@ -278,7 +278,8 @@ fun Application.configureRouting() {
             } finally {
                 sessionManager.removeClient(code, userId)
                 logger.info("Client $userId disconnected from session $code")
-                if (sessionManager.getSessionByCode(code) != null) {
+                val stillAlive = sessionManager.getSessionByCode(code) != null
+                if (stillAlive) {
                     try {
                         broadcaster.broadcast(
                             session,
@@ -286,6 +287,22 @@ fun Application.configureRouting() {
                         )
                     } catch (e: Exception) {
                         logger.warn("Failed to broadcast participant_left for $userId: ${e.message}")
+                    }
+                    // If the host disconnected, notify remaining clients so the admin's app
+                    // knows to take over TrackEnded responsibility
+                    if (userId == session.hostId && session.clients.isNotEmpty()) {
+                        try {
+                            broadcaster.broadcast(
+                                session,
+                                SyncCommand.HostDisconnected(
+                                    hostId = session.hostId,
+                                    adminId = session.adminId,
+                                    serverTimestampMs = System.currentTimeMillis()
+                                )
+                            )
+                        } catch (e: Exception) {
+                            logger.warn("Failed to broadcast host_disconnected: ${e.message}")
+                        }
                     }
                 }
             }
@@ -373,7 +390,8 @@ private suspend fun handleCommand(
             is SyncCommand.TrackEnded -> {
                 // Only the host/admin should trigger auto-advance — ignore duplicates from non-hosts
                 if (client.userId != session.hostId && client.userId != session.adminId) return
-                val next = playlistManager.advanceToNext(sessionCode)
+                // Idempotency guard built into advanceToNext: duplicate TrackEnded for same track is a no-op
+                val next = playlistManager.advanceToNext(sessionCode, command.trackId)
                 if (next != null) {
                     session.currentTrack = next.trackInfo  // includes streamUrl
                     session.positionMs = 0L

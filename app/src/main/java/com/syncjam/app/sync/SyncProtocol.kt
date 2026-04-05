@@ -214,4 +214,12 @@ sealed interface SyncCommand {
         val reason: String = "",
         val serverTimestampMs: Long = 0L
     ) : SyncCommand
+
+    /** Server → all: the host has disconnected; adminId is now the effective playback leader. */
+    @Serializable @SerialName("host_disconnected")
+    data class HostDisconnected(
+        val hostId: String,
+        val adminId: String,
+        val serverTimestampMs: Long = 0L
+    ) : SyncCommand
 }

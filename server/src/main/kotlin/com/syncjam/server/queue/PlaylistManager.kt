@@ -27,6 +27,8 @@ class PlaylistManager {
     private val playlists = ConcurrentHashMap<String, MutableList<PlaylistTrack>>()
     // sessionCode -> current playback index
     private val currentIndex = ConcurrentHashMap<String, AtomicInteger>()
+    // sessionCode -> trackId of the most recently advanced track (prevents double-advance on stale TrackEnded)
+    private val lastAdvancedFromId = ConcurrentHashMap<String, String>()
     // sessionCode -> "$requestId:$userId" -> voteType (-1 or +1)
     private val votes = ConcurrentHashMap<String, ConcurrentHashMap<String, Int>>()
 
@@ -35,10 +37,10 @@ class PlaylistManager {
 
     fun addTrack(sessionCode: String, track: PlaylistTrack): List<PlaylistTrack> {
         val list = playlists.getOrPut(sessionCode) { mutableListOf() }
-        val curIdx = currentIndex.getOrPut(sessionCode) { AtomicInteger(0) }.get()
         synchronized(list) {
             list.add(track)
-            // Only sort the unplayed portion — never move items before the current index
+            // Read curIdx inside synchronized to avoid race with advanceToNext()
+            val curIdx = currentIndex.getOrPut(sessionCode) { AtomicInteger(0) }.get()
             sortUnplayed(list, curIdx)
         }
         return list.toList()
@@ -73,7 +75,6 @@ class PlaylistManager {
         sessionVotes[voteKey] = voteType
 
         val list = playlists.getOrPut(sessionCode) { mutableListOf() }
-        val curIdx = currentIndex.getOrPut(sessionCode) { AtomicInteger(0) }.get()
         synchronized(list) {
             val idx = list.indexOfFirst { it.requestId == requestId }
             if (idx >= 0) {
@@ -81,7 +82,8 @@ class PlaylistManager {
                     .filter { it.key.startsWith("$requestId:") }
                     .sumOf { it.value }
                 list[idx] = list[idx].copy(score = newScore)
-                // Only re-sort the unplayed portion
+                // Read curIdx inside synchronized to avoid race with advanceToNext()
+                val curIdx = currentIndex.getOrPut(sessionCode) { AtomicInteger(0) }.get()
                 sortUnplayed(list, curIdx)
             }
         }
@@ -96,9 +98,15 @@ class PlaylistManager {
 
     /**
      * Advance the internal cursor to the next track and return it.
-     * Returns null when the queue is exhausted.
+     * [fromTrackId] is the ID of the track that just ended — acts as an idempotency key
+     * so that a stale/duplicate TrackEnded for the same track cannot advance the queue twice.
+     * Returns null when the queue is exhausted or the advance was already performed.
      */
-    fun advanceToNext(sessionCode: String): PlaylistTrack? {
+    fun advanceToNext(sessionCode: String, fromTrackId: String): PlaylistTrack? {
+        // Idempotency guard: if we already advanced away from this track, ignore the duplicate
+        val previous = lastAdvancedFromId.put(sessionCode, fromTrackId)
+        if (previous == fromTrackId) return null  // duplicate TrackEnded
+
         val list = playlists[sessionCode] ?: return null
         val idx = currentIndex.getOrPut(sessionCode) { AtomicInteger(0) }
         return list.getOrNull(idx.incrementAndGet())
@@ -123,6 +131,7 @@ class PlaylistManager {
     fun clearPlaylist(sessionCode: String) {
         playlists.remove(sessionCode)
         currentIndex.remove(sessionCode)
+        lastAdvancedFromId.remove(sessionCode)
         votes.remove(sessionCode)
     }
 

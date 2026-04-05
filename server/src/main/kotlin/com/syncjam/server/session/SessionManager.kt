@@ -58,8 +58,11 @@ class SessionManager {
 
     fun addClient(sessionCode: String, client: ConnectedClient): Boolean {
         val session = getSessionByCode(sessionCode) ?: return false
-        if (session.clients.size >= 8) return false
-        session.clients[client.userId] = client
+        // Synchronized on clients map to make size-check + put atomic
+        synchronized(session.clients) {
+            if (session.clients.size >= 8) return false
+            session.clients[client.userId] = client
+        }
         logger.info("Client ${client.userId} joined session $sessionCode")
         return true
     }
