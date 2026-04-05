@@ -10,6 +10,7 @@ private const val KEY_DISPLAY_NAME = "display_name"
 private const val KEY_AVATAR_URL = "avatar_url"
 private const val KEY_LAST_SESSION_CODE = "last_session_code"
 private const val KEY_LAST_SESSION_IS_HOST = "last_session_is_host"
+private const val KEY_GUEST_USER_ID = "guest_user_id"
 
 class SessionPrefs(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -55,6 +56,14 @@ class SessionPrefs(context: Context) {
     fun clearAvatarUrl() {
         prefs.edit().remove(KEY_AVATAR_URL).apply()
     }
+
+    // ── Guest user ID (stable across ViewModel instances) ────────────────────
+
+    fun saveGuestUserId(id: String) {
+        prefs.edit().putString(KEY_GUEST_USER_ID, id).apply()
+    }
+
+    fun getGuestUserId(): String? = prefs.getString(KEY_GUEST_USER_ID, null)?.takeIf { it.isNotBlank() }
 
     // ── Last active session (for quick rejoin) ────────────────────────────────
 

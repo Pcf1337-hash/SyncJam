@@ -11,6 +11,7 @@ data class SessionUiState(
     val isConnected: Boolean = false,
     val sessionId: String? = null,
     val sessionCode: String = "",
+    val sessionName: String = "",
     val hostId: String = "",
     val adminId: String = "",
     val currentUserId: String = "",
@@ -33,7 +34,9 @@ data class SessionUiState(
     /** Tracks awaiting host approval (only populated for the host) */
     val pendingApprovals: ImmutableList<PendingTrackApprovalUi> = persistentListOf(),
     /** requestIds of own tracks that are awaiting host approval (non-host view) */
-    val ownPendingTrackIds: ImmutableList<String> = persistentListOf()
+    val ownPendingTrackIds: ImmutableList<String> = persistentListOf(),
+    val showLatencyOverlay: Boolean = false,
+    val currentLatencyMs: Long = 0L
 ) {
     val isCurrentUserAdmin: Boolean get() = adminId.isNotEmpty() && adminId == currentUserId
 }
@@ -57,8 +60,9 @@ data class CurrentTrackUi(
     val artist: String,
     val durationMs: Long,
     val albumArtUri: String?,
-    /** null = local, non-null = YouTube stream URL */
-    val streamUrl: String? = null
+    /** null = local, non-null = server/YouTube stream URL */
+    val streamUrl: String? = null,
+    val isYt: Boolean = false
 )
 
 @Immutable
@@ -76,7 +80,8 @@ data class QueueEntryUi(
     val thumbnailUrl: String?,
     /** HTTP stream URL if uploaded to server; null for local-only or YouTube */
     val streamUrl: String? = null,
-    val isCurrent: Boolean = false
+    val isCurrent: Boolean = false,
+    val isUploading: Boolean = false
 )
 
 enum class TrackSourceUi { LOCAL, YOUTUBE }
@@ -151,4 +156,6 @@ sealed interface SessionEvent {
     data object DismissDirectMessage : SessionEvent
     data class ApproveTrack(val requestId: String) : SessionEvent
     data class RejectTrack(val requestId: String, val reason: String = "") : SessionEvent
+    data class RenameSession(val newName: String) : SessionEvent
+    data class ReorderQueue(val fromIndex: Int, val toIndex: Int) : SessionEvent
 }

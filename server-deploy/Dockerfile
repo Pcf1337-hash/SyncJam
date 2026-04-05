@@ -2,22 +2,23 @@ FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
-# Install yt-dlp dependencies: Python3, ffmpeg, curl
+# Install yt-dlp + Node.js (required JS runtime for YouTube extraction)
 RUN apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
     curl \
+    nodejs \
     && pip3 install --break-system-packages yt-dlp \
     && yt-dlp --version
 
-# Download directory for YouTube tracks
-RUN mkdir -p /app/downloads && chmod 777 /app/downloads
+# Download + uploads directories
+RUN mkdir -p /app/downloads /app/uploads && chmod 777 /app/downloads /app/uploads
 
 # Copy the fat JAR (built with shadowJar)
 COPY syncjam-server.jar app.jar
 
-# Create non-root user for security (needs write access to downloads)
+# Create non-root user for security (needs write access to downloads/uploads)
 RUN addgroup -S syncjam && adduser -S syncjam -G syncjam \
     && chown -R syncjam:syncjam /app
 

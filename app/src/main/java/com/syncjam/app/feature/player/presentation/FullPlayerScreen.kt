@@ -3,12 +3,15 @@ package com.syncjam.app.feature.player.presentation
 import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -30,7 +34,6 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -52,8 +57,64 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import kotlin.random.Random
+
+/**
+ * Canvas-based waveform progress bar with 60 stable bars.
+ * Bars to the left of [progress] are drawn in primary colour; bars to the right in surfaceVariant.
+ * Tapping/dragging anywhere on the bar fires [onSeek] with the new 0f..1f position.
+ * Uses graphicsLayer { } so colour interpolation doesn't cause extra recomposition.
+ */
+@Composable
+fun WaveformProgressBar(
+    progress: Float,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Stable random bar heights — only computed once per composition lifetime
+    val barHeights = remember {
+        (0 until 60).map { Random.nextFloat().coerceIn(0.1f, 1.0f) }
+    }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .graphicsLayer { } // isolate layer — prevents upstream recomposition on colour reads
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val x = event.changes.firstOrNull()?.position?.x ?: continue
+                        val seekPos = (x / size.width).coerceIn(0f, 1f)
+                        event.changes.forEach { it.consume() }
+                        onSeek(seekPos)
+                    }
+                }
+            }
+    ) {
+        val totalBars = barHeights.size
+        val barCount = totalBars.toFloat()
+        val gap = size.width * 0.008f                       // ~0.8% of width as gap between bars
+        val barWidth = (size.width - gap * (barCount - 1)) / barCount
+
+        barHeights.forEachIndexed { index, heightFraction ->
+            val barHeight = size.height * heightFraction
+            val x = index * (barWidth + gap)
+            val y = (size.height - barHeight) / 2f
+            val isPlayed = index / barCount < progress
+
+            drawRect(
+                color = if (isPlayed) primaryColor else trackColor,
+                topLeft = Offset(x, y),
+                size = Size(barWidth.coerceAtLeast(1f), barHeight)
+            )
+        }
+    }
+}
 
 /**
  * Full-screen player with:
@@ -62,6 +123,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
  * - Haptic feedback on play/pause/skip
  * - Glassmorphism background (API 31+, fallback semi-transparent)
  * - Swipe-down dismiss gesture
+ * - WaveformProgressBar replacing the plain Slider
+ * - Floating parallax effect on the album art / vinyl disc
  */
 @Composable
 fun FullPlayerScreen(
@@ -95,6 +158,18 @@ fun FullPlayerScreen(
     LaunchedEffect(isPlaying) {
         if (!isPlaying) lastRotation = rotation
     }
+
+    // ── Floating parallax animation on album art ──────────────────────────────
+    val floatTransition = rememberInfiniteTransition(label = "float")
+    val floatTranslationY by floatTransition.animateFloat(
+        initialValue = -8f,
+        targetValue = 0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "floatY"
+    )
 
     // ── Glassmorphism / fallback background ───────────────────────────────────
     val blurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -168,11 +243,12 @@ fun FullPlayerScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // ── Vinyl Disc ────────────────────────────────────────────────────
+            // ── Vinyl Disc (with floating parallax) ───────────────────────────
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.75f)
-                    .aspectRatio(1f),
+                    .aspectRatio(1f)
+                    .graphicsLayer { translationY = floatTranslationY },
                 contentAlignment = Alignment.Center
             ) {
                 // Outer vinyl ring
@@ -226,10 +302,10 @@ fun FullPlayerScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // ── Progress slider ───────────────────────────────────────────────
-            Slider(
-                value = playbackProgress,
-                onValueChange = onSeek,
+            // ── Waveform progress bar (replaces plain Slider) ─────────────────
+            WaveformProgressBar(
+                progress = playbackProgress,
+                onSeek = onSeek,
                 modifier = Modifier.fillMaxWidth()
             )
 

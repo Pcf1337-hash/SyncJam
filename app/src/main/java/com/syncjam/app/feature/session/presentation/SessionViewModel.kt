@@ -246,6 +246,8 @@ class SessionViewModel @Inject constructor(
                     state.copy(pendingApprovals = state.pendingApprovals.filter { it.requestId != event.requestId }.toImmutableList())
                 }
             }
+            is SessionEvent.RenameSession -> renameSession(event.newName)
+            is SessionEvent.ReorderQueue -> { /* handled locally — no server command yet */ }
         }
     }
 
@@ -255,7 +257,9 @@ class SessionViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: userId.ifBlank { UUID.randomUUID().toString() }
+                val resolvedUserId = supabase.auth.currentUserOrNull()?.id
+                    ?: userId.ifBlank { sessionPrefs.getGuestUserId() ?: UUID.randomUUID().toString() }
+                sessionPrefs.saveGuestUserId(resolvedUserId)
                 val resolvedName = displayName.ifBlank {
                     sessionPrefs.getDisplayName()
                         ?: supabase.auth.currentUserOrNull()?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() }
@@ -302,7 +306,9 @@ class SessionViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: userId.ifBlank { UUID.randomUUID().toString() }
+                val resolvedUserId = supabase.auth.currentUserOrNull()?.id
+                    ?: userId.ifBlank { sessionPrefs.getGuestUserId() ?: UUID.randomUUID().toString() }
+                sessionPrefs.saveGuestUserId(resolvedUserId)
                 val resolvedName = displayName.ifBlank {
                     sessionPrefs.getDisplayName()
                         ?: supabase.auth.currentUserOrNull()?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() }
@@ -332,7 +338,10 @@ class SessionViewModel @Inject constructor(
     private fun connectToExistingSession(code: String, isHost: Boolean, displayName: String) {
         if (currentSessionCode == code) return
         viewModelScope.launch {
-            val resolvedUserId = supabase.auth.currentUserOrNull()?.id ?: UUID.randomUUID().toString()
+            // Reuse the same userId as createSession/joinSession — persisted across ViewModel instances
+            val resolvedUserId = supabase.auth.currentUserOrNull()?.id
+                ?: sessionPrefs.getGuestUserId()
+                ?: UUID.randomUUID().toString().also { sessionPrefs.saveGuestUserId(it) }
             val resolvedName = displayName.ifBlank {
                 sessionPrefs.getDisplayName()
                     ?: supabase.auth.currentUserOrNull()?.email?.substringBefore("@")?.replaceFirstChar { it.uppercase() }
@@ -722,6 +731,10 @@ class SessionViewModel @Inject constructor(
                 }
             }
 
+            is SyncCommand.RenameSession -> {
+                _uiState.update { it.copy(sessionName = command.newName) }
+            }
+
             else -> {}
         }
     }
@@ -807,8 +820,10 @@ class SessionViewModel @Inject constructor(
     private suspend fun readBytesFromUri(uriString: String, maxSizeBytes: Long = 200 * 1024 * 1024): ByteArray? = withContext(Dispatchers.IO) {
         try {
             val uri = Uri.parse(uriString)
-            // Check file size before reading to prevent OOM
-            val fileSize = context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            // Try to get file size — some content URIs (e.g. album art) don't support openAssetFileDescriptor
+            val fileSize = try {
+                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+            } catch (_: Exception) { -1L }
             if (fileSize > maxSizeBytes) {
                 Log.w(TAG, "File too large ($fileSize bytes > $maxSizeBytes): $uriString")
                 withContext(Dispatchers.Main) {
@@ -964,12 +979,19 @@ class SessionViewModel @Inject constructor(
             artist = artist,
             durationMs = durationMs,
             albumArtUri = albumArtUrl,
+            isYt = isYt,
             streamUrl = when {
                 isYt -> "$serverBaseUrl/youtube/stream/$ytId"
                 streamUrl != null -> streamUrl
                 else -> null
             }
         )
+    }
+
+    private fun renameSession(newName: String) {
+        if (newName.isBlank() || !isHostSession) return
+        _uiState.update { it.copy(sessionName = newName) }
+        sendCommand(SyncCommand.RenameSession(newName = newName))
     }
 
     private fun QueueEntry.toUi(isCurrent: Boolean = false): QueueEntryUi = QueueEntryUi(

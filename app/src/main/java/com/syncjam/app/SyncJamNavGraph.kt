@@ -9,6 +9,7 @@ import androidx.navigation.toRoute
 import com.syncjam.app.core.ui.theme.SyncJamTheme
 import com.syncjam.app.feature.auth.presentation.LoginScreen
 import com.syncjam.app.feature.home.presentation.HomeScreen
+import com.syncjam.app.feature.onboarding.OnboardingScreen
 import com.syncjam.app.feature.session.presentation.CreateSessionScreen
 import com.syncjam.app.feature.session.presentation.JoinSessionScreen
 import com.syncjam.app.feature.session.presentation.SessionScreen
@@ -17,6 +18,7 @@ import com.syncjam.app.feature.voting.presentation.QueueScreen
 import kotlinx.serialization.Serializable
 
 @Serializable sealed interface Route {
+    @Serializable data object Onboarding : Route
     @Serializable data object Login : Route
     @Serializable data object Home : Route
     @Serializable data class Session(val sessionId: String, val sessionCode: String = "", val isHost: Boolean = false, val displayName: String = "") : Route
@@ -28,10 +30,20 @@ import kotlinx.serialization.Serializable
 }
 
 @Composable
-fun SyncJamNavGraph() {
+fun SyncJamNavGraph(startDestination: Route = Route.Login) {
     SyncJamTheme {
         val navController = rememberNavController()
-        NavHost(navController = navController, startDestination = Route.Login) {
+        NavHost(navController = navController, startDestination = startDestination) {
+
+            composable<Route.Onboarding> {
+                OnboardingScreen(
+                    onFinished = {
+                        navController.navigate(Route.Login) {
+                            popUpTo(Route.Onboarding) { inclusive = true }
+                        }
+                    }
+                )
+            }
 
             composable<Route.Settings> {
                 SettingsScreen(onBack = { navController.popBackStack() })

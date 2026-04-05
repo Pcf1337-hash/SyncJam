@@ -42,8 +42,7 @@ private data class YtDlpJsonOutput(
 private val ytDlpJson = Json { ignoreUnknownKeys = true }
 
 class YtDlpService(
-    private val downloadDir: String = System.getenv("YTDLP_DOWNLOAD_DIR") ?: "/app/downloads",
-    private val cookiesPath: String? = System.getenv("YTDLP_COOKIES_PATH")
+    private val downloadDir: String = System.getenv("YTDLP_DOWNLOAD_DIR") ?: "/app/downloads"
 ) {
     private val logger = LoggerFactory.getLogger(YtDlpService::class.java)
 
@@ -51,23 +50,20 @@ class YtDlpService(
         File(downloadDir).mkdirs()
     }
 
-    /** Appends --cookies flag if a cookie file is configured and exists. */
-    private fun List<String>.withCookies(): List<String> {
-        val path = cookiesPath ?: return this
-        if (!File(path).exists()) return this
-        return this + listOf("--cookies", path)
-    }
+    /** Base yt-dlp flags that bypass YouTube bot detection via the Android client. */
+    private fun baseArgs(): List<String> = listOf(
+        "--extractor-args", "youtube:player_client=android",
+        "--no-playlist"
+    )
 
     suspend fun getInfo(youtubeUrl: String): YtDlpInfo? = withContext(Dispatchers.IO) {
         try {
             extractYouTubeId(youtubeUrl) ?: return@withContext null
             val process = ProcessBuilder(
-                listOf(
-                    "yt-dlp",
-                    "--no-playlist",
+                baseArgs() + listOf(
                     "--print", "%(id)s|%(title)s|%(uploader)s|%(duration)s|%(thumbnail)s",
                     youtubeUrl
-                ).withCookies()
+                )
             ).apply {
                 redirectErrorStream(true)
             }.start()
@@ -132,9 +128,7 @@ class YtDlpService(
 
             logger.info("Downloading: $youtubeUrl")
             val process = ProcessBuilder(
-                listOf(
-                    "yt-dlp",
-                    "--no-playlist",
+                baseArgs() + listOf(
                     "--extract-audio",
                     "--audio-format", "mp3",
                     "--audio-quality", "192K",
@@ -143,7 +137,7 @@ class YtDlpService(
                     "--output", outputTemplate,
                     "--print-json",
                     youtubeUrl
-                ).withCookies()
+                )
             ).apply {
                 redirectErrorStream(false)
                 directory(File(downloadDir))

@@ -21,10 +21,8 @@ FILES_TO_UPLOAD = [
     "nginx.conf",
 ]
 
-# Extra files from project root
-EXTRA_FILES = [
-    ("assets/cookies.txt", f"{SERVER_PATH}/cookies.txt"),
-]
+# Extra files from project root (none currently needed)
+EXTRA_FILES = []
 
 DOCKER_INSTALL_SCRIPT = """
 set -e

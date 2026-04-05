@@ -77,6 +77,13 @@ sealed interface SyncCommand {
         val serverTimestampMs: Long = 0L
     ) : SyncCommand
 
+    @Serializable @SerialName("reorder_queue")
+    data class ReorderQueue(
+        val fromIndex: Int,
+        val toIndex: Int,
+        val serverTimestampMs: Long = 0L
+    ) : SyncCommand
+
     @Serializable @SerialName("playlist_update")
     data class PlaylistUpdate(
         val tracks: List<QueueEntry>,
@@ -220,6 +227,14 @@ sealed interface SyncCommand {
     data class HostDisconnected(
         val hostId: String,
         val adminId: String,
+        val serverTimestampMs: Long = 0L
+    ) : SyncCommand
+
+    // ── Session Meta ──────────────────────────────────────────────────────────
+    /** Host → Server → all: rename the session. */
+    @Serializable @SerialName("rename_session")
+    data class RenameSession(
+        val newName: String,
         val serverTimestampMs: Long = 0L
     ) : SyncCommand
 }

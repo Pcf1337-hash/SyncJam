@@ -14,12 +14,11 @@ services:
       - PORT=8080
       - JAVA_OPTS=-Xms256m -Xmx512m -XX:+UseG1GC
       - YTDLP_DOWNLOAD_DIR=/app/downloads
-      - YTDLP_COOKIES_PATH=/app/cookies.txt
     volumes:
       # Persist downloaded YouTube tracks across restarts
       - ytdlp_downloads:/app/downloads
-      # YouTube cookies for authenticated downloads
-      - /opt/syncjam/cookies.txt:/app/cookies.txt:ro
+      # Persist uploaded local tracks across restarts
+      - uploads_data:/app/uploads
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -59,3 +58,4 @@ networks:
 
 volumes:
   ytdlp_downloads:
+  uploads_data:

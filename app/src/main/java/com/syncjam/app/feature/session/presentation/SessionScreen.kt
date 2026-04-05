@@ -156,6 +156,8 @@ fun SessionScreen(
     val voiceState by voiceViewModel.voiceState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showAddTrackSheet by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameInput by remember { mutableStateOf("") }
 
     // ── RECORD_AUDIO Permission + Push-to-Talk ────────────────────────────────
     val micPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
@@ -218,6 +220,44 @@ fun SessionScreen(
         )
     }
 
+    // Rename session dialog (host only)
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Session umbenennen") },
+            text = {
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { if (it.length <= 60) renameInput = it },
+                    label = { Text("Session-Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = {
+                        if (renameInput.isNotBlank()) {
+                            viewModel.onEvent(SessionEvent.RenameSession(renameInput.trim()))
+                        }
+                        showRenameDialog = false
+                    })
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (renameInput.isNotBlank()) {
+                            viewModel.onEvent(SessionEvent.RenameSession(renameInput.trim()))
+                        }
+                        showRenameDialog = false
+                    },
+                    enabled = renameInput.isNotBlank()
+                ) { Text("Umbenennen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) { Text("Abbrechen") }
+            }
+        )
+    }
+
     // Kicked dialog
     uiState.kickedReason?.let { reason ->
         AlertDialog(
@@ -269,11 +309,19 @@ fun SessionScreen(
                     ),
                     title = {
                         Column {
+                            val sessionDisplayName = uiState.sessionName.ifBlank {
+                                if (uiState.sessionCode.isNotEmpty()) "Session ${uiState.sessionCode}" else "Jam Session"
+                            }
                             Text(
-                                if (uiState.sessionCode.isNotEmpty()) "Session ${uiState.sessionCode}"
-                                else "Jam Session",
+                                sessionDisplayName,
                                 style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                modifier = if (uiState.hostId == uiState.currentUserId) {
+                                    Modifier.clickable {
+                                        renameInput = uiState.sessionName.ifBlank { sessionDisplayName }
+                                        showRenameDialog = true
+                                    }
+                                } else Modifier
                             )
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -378,7 +426,7 @@ fun SessionScreen(
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Medium
                             )
-                            if (track.streamUrl != null) {
+                            if (track.isYt) {
                                 Spacer(Modifier.height(6.dp))
                                 Surface(
                                     color = MaterialTheme.colorScheme.errorContainer,
@@ -1335,6 +1383,15 @@ private fun ParticipantChip(
                             .offset(y = (-4).dp)
                     )
                 }
+                // Online indicator — bottom-right green dot
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 1.dp, y = 1.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.tertiary)
+                )
             }
             Text(
                 participant.displayName,

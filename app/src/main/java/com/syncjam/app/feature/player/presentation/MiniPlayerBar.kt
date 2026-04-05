@@ -2,6 +2,7 @@ package com.syncjam.app.feature.player.presentation
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +30,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -43,6 +46,7 @@ import coil3.compose.AsyncImage
  * Features:
  * - Thin LinearProgressIndicator at the very bottom edge of the bar
  * - Pulsing play indicator (scale 1.0 → 1.2 → 1.0) when [isPlaying]
+ * - Radial arc progress ring drawn via Canvas around the play/pause icon
  * - Haptic feedback on play/pause and skip
  */
 @Composable
@@ -64,6 +68,13 @@ fun MiniPlayerBar(
         targetValue = if (isPlaying) 1.15f else 1f,
         animationSpec = spring(dampingRatio = 0.4f, stiffness = 300f),
         label = "playButtonScale"
+    )
+
+    // Smooth progress animation for the arc ring
+    val animatedProgress by animateFloatAsState(
+        targetValue = playbackProgress,
+        animationSpec = spring(dampingRatio = 1f, stiffness = 50f),
+        label = "arcProgress"
     )
 
     Surface(
@@ -120,9 +131,15 @@ fun MiniPlayerBar(
                     )
                 }
 
-                // Play/Pause
-                Box(contentAlignment = Alignment.Center) {
-                    // Pulsing background circle
+                // Play/Pause with radial progress ring overlay
+                val primaryColor = MaterialTheme.colorScheme.primary
+                val ringTrackColor = MaterialTheme.colorScheme.surfaceVariant
+
+                Box(
+                    modifier = Modifier.size(48.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Pulsing background circle (existing behaviour)
                     if (isPlaying) {
                         Box(
                             modifier = Modifier
@@ -134,6 +151,8 @@ fun MiniPlayerBar(
                                 )
                         )
                     }
+
+                    // The icon button itself
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -146,6 +165,44 @@ fun MiniPlayerBar(
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(28.dp)
                         )
+                    }
+
+                    // Radial arc progress ring drawn on top — uses graphicsLayer { } for isolation
+                    Canvas(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .graphicsLayer { }  // own layer — no upstream recomposition on draw reads
+                    ) {
+                        val strokePx = 3.dp.toPx()
+                        val inset = strokePx / 2f
+                        val arcSize = androidx.compose.ui.geometry.Size(
+                            width = size.width - strokePx,
+                            height = size.height - strokePx
+                        )
+
+                        // Track (background ring)
+                        drawArc(
+                            color = ringTrackColor,
+                            startAngle = -90f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                            size = arcSize,
+                            style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                        )
+
+                        // Progress arc
+                        if (animatedProgress > 0f) {
+                            drawArc(
+                                color = primaryColor,
+                                startAngle = -90f,
+                                sweepAngle = 360f * animatedProgress.coerceIn(0f, 1f),
+                                useCenter = false,
+                                topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                                size = arcSize,
+                                style = Stroke(width = strokePx, cap = StrokeCap.Round)
+                            )
+                        }
                     }
                 }
 
