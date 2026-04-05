@@ -23,5 +23,6 @@ data class PublicSessionUi(
     val currentTrackTitle: String?,
     val currentTrackArtist: String?,
     val isPasswordProtected: Boolean,
-    val createdAt: Long
+    val createdAt: Long,
+    val isOwnSession: Boolean = false
 )

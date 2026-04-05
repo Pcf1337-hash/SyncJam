@@ -64,13 +64,17 @@ class HomeViewModel @Inject constructor(
         _extraState,
         _publicSessions
     ) { sessions, update, (lastCode, isHost, name), publicSessions ->
+        // Eigene Session-Codes aus History ermitteln (isHost = true)
+        val ownCodes = sessions.filter { it.isHost }.map { it.sessionCode }.toSet()
         HomeUiState(
             recentSessions = sessions,
             availableUpdate = update,
             lastSessionCode = lastCode,
             isLastSessionHost = isHost,
             displayName = name,
-            publicSessions = publicSessions
+            publicSessions = publicSessions.map { s ->
+                s.copy(isOwnSession = s.sessionCode in ownCodes)
+            }
         )
     }.stateIn(
         scope = viewModelScope,
@@ -149,6 +153,13 @@ class HomeViewModel @Inject constructor(
                 // Public-Sessions-Liste neu laden damit neuer Name sichtbar ist
                 fetchPublicSessions()
             }
+        }
+    }
+
+    /** Löscht alle Sessions aus der lokalen History. */
+    fun clearAllSessions() {
+        viewModelScope.launch {
+            runCatching { sessionHistoryDao.deleteAll() }
         }
     }
 

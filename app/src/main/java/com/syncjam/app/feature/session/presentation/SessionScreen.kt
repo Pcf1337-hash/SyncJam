@@ -19,6 +19,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,8 +46,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
@@ -52,6 +60,9 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.WifiOff
@@ -59,6 +70,7 @@ import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
@@ -73,6 +85,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -83,9 +97,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -132,11 +149,13 @@ fun SessionScreen(
     onLeave: () -> Unit,
     onOpenPlaylist: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel(),
-    voiceViewModel: VoiceViewModel = hiltViewModel()
+    voiceViewModel: VoiceViewModel = hiltViewModel(),
+    libraryViewModel: com.syncjam.app.feature.library.presentation.LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val voiceState by voiceViewModel.voiceState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showAddTrackSheet by remember { mutableStateOf(false) }
 
     // ── RECORD_AUDIO Permission + Push-to-Talk ────────────────────────────────
     val micPermission = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
@@ -273,7 +292,8 @@ fun SessionScreen(
             },
             bottomBar = {
                 Column {
-                    // Voice-Overlay schwebt direkt über dem Player-Bar
+                    // VoiceOverlay im bottomBar — Scaffold passt Content-Padding automatisch an,
+                    // sodass die Waveform NIEMALS verdeckt wird.
                     VoiceOverlay(
                         voiceState = voiceState,
                         onPttPress = handlePttPress,
@@ -284,6 +304,7 @@ fun SessionScreen(
                         onTogglePlayPause = { viewModel.onEvent(SessionEvent.TogglePlayPause) },
                         onSkip = { uiState.currentTrack?.let { viewModel.onEvent(SessionEvent.SendTrackEnded(it.id)) } },
                         onOpenPlaylist = onOpenPlaylist,
+                        onOpenLibrary = { showAddTrackSheet = true },
                         onReaction = { emoji -> viewModel.onEvent(SessionEvent.SendReaction(emoji)) },
                         onMicPress = handlePttPress,
                         onMicRelease = handlePttRelease,
@@ -443,6 +464,26 @@ fun SessionScreen(
         // Floating emoji reactions — rendered on top of everything
         FloatingReactionOverlay(reactions = uiState.floatingReactions)
 
+        // Add Track Sheet
+        if (showAddTrackSheet) {
+            SessionAddTrackSheet(
+                libraryViewModel = libraryViewModel,
+                onAddTrack = { track ->
+                    viewModel.onEvent(
+                        SessionEvent.AddLocalTrackToQueue(
+                            trackId = track.id,
+                            title = track.title,
+                            artist = track.artist,
+                            durationMs = track.durationMs,
+                            contentUri = track.contentUri,
+                            albumArtUri = track.albumArtUri
+                        )
+                    )
+                },
+                onDismiss = { showAddTrackSheet = false }
+            )
+        }
+
         // Direct message notification
         uiState.directMessage?.let { dm ->
             Box(
@@ -550,6 +591,7 @@ private fun PlayerBottomBar(
     onTogglePlayPause: () -> Unit,
     onSkip: () -> Unit,
     onOpenPlaylist: () -> Unit,
+    onOpenLibrary: () -> Unit,
     onReaction: (String) -> Unit,
     onMicPress: () -> Unit,
     onMicRelease: () -> Unit,
@@ -703,6 +745,13 @@ private fun PlayerBottomBar(
                         if (uiState.isPlaying) "Pausieren" else "Abspielen",
                         Modifier.size(34.dp)
                     )
+                }
+
+                FilledTonalIconButton(
+                    onClick = onOpenLibrary,
+                    modifier = Modifier.size(52.dp)
+                ) {
+                    Icon(Icons.Default.MusicNote, "Bibliothek", Modifier.size(22.dp))
                 }
 
                 FilledTonalButton(
@@ -1276,4 +1325,375 @@ private fun ParticipantChip(
 private fun formatMs(ms: Long): String {
     val totalSec = ms / 1000
     return "%d:%02d".format(totalSec / 60, totalSec % 60)
+}
+
+// ── Add Track Sheet ───────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SessionAddTrackSheet(
+    libraryViewModel: com.syncjam.app.feature.library.presentation.LibraryViewModel,
+    onAddTrack: (com.syncjam.app.feature.library.presentation.TrackUi) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var expandedPlaylistId by remember { mutableStateOf<String?>(null) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focusManager = LocalFocusManager.current
+
+    // Playlist tracks — collected reactively when a playlist is expanded
+    val expandedPlaylistTracks by produceState<List<com.syncjam.app.feature.library.presentation.TrackUi>>(
+        initialValue = emptyList(),
+        key1 = expandedPlaylistId
+    ) {
+        val id = expandedPlaylistId
+        if (id != null) {
+            libraryViewModel.getPlaylistTracksFlow(id).collect { value = it }
+        } else {
+            value = emptyList()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (libraryState.tracks.isEmpty()) libraryViewModel.scanLibrary()
+    }
+
+    val filteredTracks = remember(libraryState.tracks, searchQuery) {
+        if (searchQuery.isBlank()) libraryState.tracks
+        else libraryState.tracks.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.artist.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    val filteredFavorites = remember(libraryState.favorites, searchQuery) {
+        if (searchQuery.isBlank()) libraryState.favorites
+        else libraryState.favorites.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+            it.artist.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Track hinzufügen",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = { libraryViewModel.scanLibrary() }) {
+                    if (libraryState.isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                    } else {
+                        Icon(Icons.Default.Refresh, "Aktualisieren")
+                    }
+                }
+            }
+
+            // Search bar (Tracks + Favoriten)
+            if (selectedTab < 2) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Suchen…") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Clear, null)
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            TabRow(selectedTabIndex = selectedTab) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    icon = { Icon(Icons.Default.MusicNote, null, Modifier.size(18.dp)) },
+                    text = { Text("Alle") }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    icon = { Icon(Icons.Default.Favorite, null, Modifier.size(18.dp)) },
+                    text = { Text("Favoriten") }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2; searchQuery = "" },
+                    icon = { Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, Modifier.size(18.dp)) },
+                    text = { Text("Playlists") }
+                )
+            }
+
+            when (selectedTab) {
+                0 -> AddTrackPickerList(
+                    tracks = filteredTracks,
+                    isLoading = libraryState.isLoading,
+                    searchQuery = searchQuery,
+                    onRefresh = { libraryViewModel.scanLibrary() },
+                    onAddTrack = { onAddTrack(it); onDismiss() }
+                )
+                1 -> AddTrackPickerList(
+                    tracks = filteredFavorites,
+                    isLoading = libraryState.isLoading,
+                    searchQuery = searchQuery,
+                    onRefresh = { libraryViewModel.scanLibrary() },
+                    onAddTrack = { onAddTrack(it); onDismiss() },
+                    emptyMessage = "Keine Favoriten vorhanden"
+                )
+                2 -> AddPlaylistPickerList(
+                    playlists = libraryState.playlists,
+                    expandedPlaylistId = expandedPlaylistId,
+                    expandedPlaylistTracks = expandedPlaylistTracks,
+                    onTogglePlaylist = { id ->
+                        expandedPlaylistId = if (expandedPlaylistId == id) null else id
+                    },
+                    onAddTrack = { onAddTrack(it); onDismiss() }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddTrackPickerList(
+    tracks: List<com.syncjam.app.feature.library.presentation.TrackUi>,
+    isLoading: Boolean,
+    searchQuery: String,
+    onRefresh: () -> Unit,
+    onAddTrack: (com.syncjam.app.feature.library.presentation.TrackUi) -> Unit,
+    emptyMessage: String = "Keine Tracks gefunden"
+) {
+    if (isLoading && tracks.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(200.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+
+    if (tracks.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(200.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (searchQuery.isNotEmpty()) "Kein Ergebnis für \"$searchQuery\""
+                    else emptyMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (searchQuery.isEmpty()) {
+                    androidx.compose.material3.Button(onClick = onRefresh) { Text("Bibliothek scannen") }
+                }
+            }
+        }
+        return
+    }
+
+    LazyColumn(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)
+    ) {
+        val grouped = tracks.groupBy { it.artist }.toSortedMap()
+        grouped.forEach { (artist, artistTracks) ->
+            item(key = "artist_$artist") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        artist.ifBlank { "Unbekannter Künstler" },
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "${artistTracks.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            items(artistTracks, key = { it.id }, contentType = { "track" }) { track ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onAddTrack(track) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (track.albumArtUri != null) {
+                            AsyncImage(
+                                model = track.albumArtUri,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            track.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            track.durationDisplay,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (track.isFavorite) {
+                        Icon(Icons.Default.Favorite, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Icon(Icons.Default.Add, "Hinzufügen", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                HorizontalDivider(modifier = Modifier.padding(start = 68.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddPlaylistPickerList(
+    playlists: kotlinx.collections.immutable.ImmutableList<com.syncjam.app.feature.library.presentation.PlaylistUi>,
+    expandedPlaylistId: String?,
+    expandedPlaylistTracks: List<com.syncjam.app.feature.library.presentation.TrackUi>,
+    onTogglePlaylist: (String) -> Unit,
+    onAddTrack: (com.syncjam.app.feature.library.presentation.TrackUi) -> Unit
+) {
+    if (playlists.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(200.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Keine Playlists vorhanden", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
+
+    LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 32.dp)) {
+        items(playlists, key = { it.id }, contentType = { "playlist" }) { playlist ->
+            val isExpanded = expandedPlaylistId == playlist.id
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onTogglePlaylist(playlist.id) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.PlaylistPlay, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(24.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(playlist.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("${playlist.trackCount} Tracks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(
+                        if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (isExpanded) {
+                    if (expandedPlaylistTracks.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Keine Tracks in dieser Playlist", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        expandedPlaylistTracks.forEach { track ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onAddTrack(track) }
+                                    .padding(start = 28.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (track.albumArtUri != null) {
+                                        AsyncImage(
+                                            model = track.albumArtUri,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(track.title, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(track.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Icon(Icons.Default.Add, "Hinzufügen", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(start = 74.dp))
+                        }
+                    }
+                }
+                HorizontalDivider()
+            }
+        }
+    }
 }

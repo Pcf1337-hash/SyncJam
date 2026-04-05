@@ -13,10 +13,12 @@ import com.syncjam.app.feature.library.data.MediaStoreScanner
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -128,6 +130,10 @@ class LibraryViewModel @Inject constructor(
             playlistDao.removeTrackFromPlaylist(playlistId, trackId)
         }
     }
+
+    /** Tracks einer Playlist als Flow — für den In-Session-Bibliothek-Picker. */
+    fun getPlaylistTracksFlow(playlistId: String): Flow<List<TrackUi>> =
+        playlistDao.getTracksForPlaylist(playlistId).map { entities -> entities.map { it.toUi() } }
 
     fun triggerCoverDownload() {
         viewModelScope.launch {

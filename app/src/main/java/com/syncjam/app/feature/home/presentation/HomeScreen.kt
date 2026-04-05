@@ -198,6 +198,7 @@ fun HomeScreen(
                         hostId = uiState.displayName
                     )
                 },
+                onClearAllSessions = { viewModel.clearAllSessions() },
                 modifier = Modifier.padding(padding)
             )
             1 -> PublicSessionsTab(
@@ -229,6 +230,7 @@ private fun DashboardTab(
     onJoinPublicSession: (code: String) -> Unit,
     onDeleteSession: (SessionHistoryEntity) -> Unit,
     onRenameSession: (SessionHistoryEntity, String) -> Unit,
+    onClearAllSessions: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(
@@ -318,7 +320,22 @@ private fun DashboardTab(
 
         // ── Session-Verlauf ───────────────────────────────────────────────────
         item {
-            SectionHeader(icon = Icons.Default.History, title = "Letzte Sessions")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                SectionHeader(icon = Icons.Default.History, title = "Letzte Sessions")
+                if (uiState.recentSessions.isNotEmpty()) {
+                    TextButton(onClick = onClearAllSessions) {
+                        Text(
+                            "Alle löschen",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
         }
 
         if (uiState.recentSessions.isEmpty()) {
@@ -619,6 +636,7 @@ private fun SessionHistoryCard(
             // Infos
             Column(modifier = Modifier.weight(1f)) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -627,7 +645,8 @@ private fun SessionHistoryCard(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
                     if (session.isHost) {
                         Surface(
@@ -733,7 +752,16 @@ private fun SessionHistoryCard(
 
 @Composable
 private fun PublicSessionCard(session: PublicSessionUi, onClick: () -> Unit) {
-    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    val containerColor = if (session.isOwnSession)
+        MaterialTheme.colorScheme.tertiaryContainer
+    else
+        MaterialTheme.colorScheme.surface
+
+    ElevatedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.elevatedCardColors(containerColor = containerColor)
+    ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -743,18 +771,23 @@ private fun PublicSessionCard(session: PublicSessionUi, onClick: () -> Unit) {
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                    .background(
+                        if (session.isOwnSession) MaterialTheme.colorScheme.tertiary
+                        else MaterialTheme.colorScheme.secondaryContainer
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.MusicNote,
+                    if (session.isOwnSession) Icons.Default.Star else Icons.Default.MusicNote,
                     null,
-                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    tint = if (session.isOwnSession) MaterialTheme.colorScheme.onTertiary
+                           else MaterialTheme.colorScheme.onSecondaryContainer,
                     modifier = Modifier.size(24.dp)
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -763,8 +796,23 @@ private fun PublicSessionCard(session: PublicSessionUi, onClick: () -> Unit) {
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    if (session.isOwnSession) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiary,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "MEINE",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     if (session.isPasswordProtected) {
                         Icon(Icons.Default.Lock, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

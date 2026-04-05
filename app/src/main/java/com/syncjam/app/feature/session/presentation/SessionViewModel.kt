@@ -326,7 +326,14 @@ class SessionViewModel @Inject constructor(
             currentUserId = resolvedUserId
             currentDisplayName = resolvedName
             isHostSession = isHost
-            _uiState.update { it.copy(sessionCode = code, currentUserId = resolvedUserId) }
+            // Host-Rechte sofort setzen — nicht auf StateSnapshot warten
+            _uiState.update {
+                it.copy(
+                    sessionCode = code,
+                    currentUserId = resolvedUserId,
+                    adminId = if (isHost) resolvedUserId else it.adminId
+                )
+            }
             // Persist last session for quick rejoin
             sessionPrefs.saveLastSession(code, isHost)
             // Save to session history

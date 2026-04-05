@@ -22,4 +22,7 @@ interface SessionHistoryDao {
 
     @Query("DELETE FROM sessions_history WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM sessions_history")
+    suspend fun deleteAll()
 }

@@ -58,7 +58,8 @@ fun VoiceOverlay(
         Surface(
             shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
             color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.97f),
-            tonalElevation = 4.dp
+            tonalElevation = 4.dp,
+            shadowElevation = 8.dp
         ) {
             Column(
                 modifier = Modifier
@@ -72,7 +73,7 @@ fun VoiceOverlay(
                     val statusLabel = when (voiceState.connectionState) {
                         VoiceConnectionState.Connecting   -> "Verbinde…"
                         VoiceConnectionState.Connected    -> "Voice aktiv"
-                        VoiceConnectionState.StubMode     -> "Voice (Demo)"
+                        VoiceConnectionState.StubMode     -> "Voice aktiv"
                         is VoiceConnectionState.Error     -> "Fehler"
                         VoiceConnectionState.Disconnected -> ""
                     }
