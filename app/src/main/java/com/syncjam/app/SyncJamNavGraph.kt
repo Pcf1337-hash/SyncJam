@@ -61,12 +61,27 @@ fun SyncJamNavGraph(
                     onCreateSession = { navController.navigate(Route.CreateSession) },
                     onJoinSession = { navController.navigate(Route.JoinSession()) },
                     onRejoinSession = { code, isHost ->
-                        navController.navigate(Route.Session(sessionId = code, sessionCode = code, isHost = isHost))
+                        // Pop back to existing Session if it's still in the back stack (user minimized)
+                        val hasSession = navController.currentBackStack.value
+                            .any { it.destination.route?.contains("Session") == true }
+                        if (hasSession) {
+                            navController.popBackStack<Route.Session>(inclusive = false)
+                        } else {
+                            navController.navigate(Route.Session(sessionId = code, sessionCode = code, isHost = isHost))
+                        }
                     },
                     onJoinPublicSession = { code ->
                         navController.navigate(Route.JoinSession(code = code))
                     },
                     onNavigateToSettings = { navController.navigate(Route.Settings) },
+                    onNavigateToSession = {
+                        // Pop back to Session if in back stack, else do nothing
+                        val hasSession = navController.currentBackStack.value
+                            .any { it.destination.route?.contains("Session") == true }
+                        if (hasSession) {
+                            navController.popBackStack<Route.Session>(inclusive = false)
+                        }
+                    },
                     isExpandedScreen = isExpandedScreen
                 )
             }
@@ -97,8 +112,15 @@ fun SyncJamNavGraph(
                     sessionCode = route.sessionCode,
                     isHost = route.isHost,
                     displayName = route.displayName,
-                    onBack = { navController.popBackStack() },
+                    onBack = {
+                        // Minimize: navigate to Home without popping Session
+                        // SessionViewModel stays alive, mini player remains visible
+                        navController.navigate(Route.Home) {
+                            launchSingleTop = false
+                        }
+                    },
                     onLeave = {
+                        // Actually leave: pop Session from back stack and go to Home
                         navController.navigate(Route.Home) {
                             popUpTo(Route.Home) { inclusive = false }
                         }

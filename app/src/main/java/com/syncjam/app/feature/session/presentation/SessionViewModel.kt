@@ -20,6 +20,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import com.syncjam.app.core.auth.SessionPrefs
 import com.syncjam.app.db.dao.SessionHistoryDao
 import com.syncjam.app.db.entity.SessionHistoryEntity
+import com.syncjam.app.feature.social.data.ChatRepositoryImpl
+import com.syncjam.app.feature.social.domain.model.ChatMessage as DomainChatMessage
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.ktor.client.HttpClient
@@ -66,7 +68,8 @@ class SessionViewModel @Inject constructor(
     private val supabase: SupabaseClient,
     private val exoPlayer: ExoPlayer,
     private val sessionPrefs: SessionPrefs,
-    private val sessionHistoryDao: SessionHistoryDao
+    private val sessionHistoryDao: SessionHistoryDao,
+    private val chatRepository: ChatRepositoryImpl
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SessionUiState())
@@ -83,6 +86,11 @@ class SessionViewModel @Inject constructor(
     private var isHostSession = false
 
     init {
+        // Forward outgoing chat messages from SocialViewModel to the WebSocket
+        viewModelScope.launch {
+            chatRepository.outgoing.collect { cmd -> sendCommand(cmd) }
+        }
+
         // Update durationMs from ExoPlayer once the track is ready (server may report 0)
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -550,8 +558,8 @@ class SessionViewModel @Inject constructor(
                         playlist = command.tracks.mapIndexed { i, q -> q.toUi(i == currentIdx) }.toImmutableList(),
                         currentQueueIndex = currentIdx,
                         currentTrack = newCurrentTrack,
-                        // Reset position when a different track becomes current
-                        positionMs = if (newCurrentTrack?.id != state.currentTrack?.id) 0L else state.positionMs
+                        // Reset position when a different track or queue index becomes current
+                        positionMs = if (newCurrentTrack?.id != state.currentTrack?.id || currentIdx != state.currentQueueIndex) 0L else state.positionMs
                     )
                 }
                 // Auto-play first track: only host triggers play so all others receive a Play command
@@ -698,6 +706,23 @@ class SessionViewModel @Inject constructor(
                 }
             }
 
+            is SyncCommand.ChatMessage -> {
+                if (command.senderId != currentUserId) {
+                    chatRepository.deliverIncoming(
+                        DomainChatMessage(
+                            id = "${command.senderId}_${command.timestampMs}",
+                            sessionId = currentSessionCode,
+                            senderId = command.senderId,
+                            senderName = command.senderName,
+                            senderAvatarUrl = null,
+                            text = command.message,
+                            timestamp = command.timestampMs,
+                            isOwn = false
+                        )
+                    )
+                }
+            }
+
             is SyncCommand.HostDisconnected -> {
                 // If this client is the admin, promote to effective host so TrackEnded fires correctly
                 if (command.adminId == currentUserId && !isHostSession) {
@@ -800,21 +825,26 @@ class SessionViewModel @Inject constructor(
             }
             try {
                 if (albumArtUri != null) {
-                    val artBytes = readBytesFromUri(albumArtUri)
-                    if (artBytes != null) {
-                        val artFileName = "$requestId.jpg"
-                        val response = httpClient.submitFormWithBinaryData(
-                            url = "${Constants.SYNC_SERVER_HTTP_URL}/upload/$currentSessionCode",
-                            formData = formData {
-                                append("file", artBytes, Headers.build {
-                                    append(HttpHeaders.ContentDisposition, "filename=\"$artFileName\"; name=\"file\"")
-                                    append(HttpHeaders.ContentType, "image/jpeg")
-                                })
-                            }
-                        )
-                        val body = response.body<kotlinx.serialization.json.JsonObject>()
-                        val urlPath = body["url"]?.jsonPrimitive?.content
-                        if (urlPath != null) albumArtUrl = "${Constants.SYNC_SERVER_HTTP_URL}$urlPath"
+                    if (albumArtUri.startsWith("http://") || albumArtUri.startsWith("https://")) {
+                        // Remote cover URL (MusicBrainz/Last.fm) — share directly, no upload needed
+                        albumArtUrl = albumArtUri
+                    } else {
+                        val artBytes = readBytesFromUri(albumArtUri)
+                        if (artBytes != null) {
+                            val artFileName = "$requestId.jpg"
+                            val response = httpClient.submitFormWithBinaryData(
+                                url = "${Constants.SYNC_SERVER_HTTP_URL}/upload/$currentSessionCode",
+                                formData = formData {
+                                    append("file", artBytes, Headers.build {
+                                        append(HttpHeaders.ContentDisposition, "filename=\"$artFileName\"; name=\"file\"")
+                                        append(HttpHeaders.ContentType, "image/jpeg")
+                                    })
+                                }
+                            )
+                            val body = response.body<kotlinx.serialization.json.JsonObject>()
+                            val urlPath = body["url"]?.jsonPrimitive?.content
+                            if (urlPath != null) albumArtUrl = "${Constants.SYNC_SERVER_HTTP_URL}$urlPath"
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -897,9 +927,14 @@ class SessionViewModel @Inject constructor(
                     put("userId", currentUserId)
                     put("displayName", currentDisplayName)
                 }
-                httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/youtube/add") {
+                val response = httpClient.post("${Constants.SYNC_SERVER_HTTP_URL}/youtube/add") {
                     contentType(ContentType.Application.Json)
                     setBody(body)
+                }
+                if (!response.status.value.toString().startsWith("2")) {
+                    val errorBody = runCatching { response.body<kotlinx.serialization.json.JsonObject>() }.getOrNull()
+                    val errMsg = errorBody?.get("error")?.jsonPrimitive?.content ?: "Ungültige YouTube-URL"
+                    _uiState.update { it.copy(ytDownloadState = YtDownloadState.Error(errMsg)) }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "addYouTubeTrack failed: ${e.message}", e)
@@ -1038,7 +1073,11 @@ class SessionViewModel @Inject constructor(
         artist = artist,
         durationMs = durationMs,
         albumArtUri = thumbnailUrl,
-        streamUrl = streamUrl
+        streamUrl = when {
+            trackId.startsWith("yt_") ->
+                "${Constants.SYNC_SERVER_HTTP_URL}/youtube/stream/${trackId.removePrefix("yt_")}"
+            else -> streamUrl
+        }
     )
 
     private fun ParticipantInfo.toUi(): ParticipantUi = ParticipantUi(

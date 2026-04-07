@@ -2,31 +2,55 @@ package com.syncjam.app.feature.social.data
 
 import com.syncjam.app.feature.social.domain.model.ChatMessage
 import com.syncjam.app.feature.social.domain.repository.ChatRepository
+import com.syncjam.app.sync.SyncCommand
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Implementation of [ChatRepository] backed by Supabase Realtime Broadcast.
+ * Chat bridge between [SocialViewModel] and [SessionViewModel] via the WebSocket.
  *
- * TODO: Inject SupabaseClient and replace stub implementations with real
- *       channel subscriptions on "chat:{sessionId}".
+ * - [sendMessage] emits to [outgoing] which SessionViewModel subscribes to and forwards via WS.
+ * - SessionViewModel calls [deliverIncoming] when a [SyncCommand.ChatMessage] arrives from WS.
+ * - [observeMessages] returns a filtered flow of messages for the current session.
  */
 @Singleton
 class ChatRepositoryImpl @Inject constructor() : ChatRepository {
 
-    override fun observeMessages(sessionId: String): Flow<ChatMessage> {
-        // TODO: supabaseClient.channel("chat:$sessionId")
-        //   .broadcast(event = "message")
-        //   .decodeAs<ChatMessageDto>()
-        //   .map { it.toDomain() }
-        return emptyFlow()
+    /** Outgoing messages to be forwarded by SessionViewModel → WebSocket. */
+    private val _outgoing = MutableSharedFlow<SyncCommand.ChatMessage>(
+        replay = 0,
+        extraBufferCapacity = 64
+    )
+    val outgoing: Flow<SyncCommand.ChatMessage> = _outgoing.asSharedFlow()
+
+    /** Incoming messages received from WebSocket and delivered by SessionViewModel. */
+    private val _incoming = MutableSharedFlow<ChatMessage>(
+        replay = 0,
+        extraBufferCapacity = 64
+    )
+
+    /** Called by SessionViewModel when a chat_message SyncCommand arrives from the server. */
+    fun deliverIncoming(message: ChatMessage) {
+        _incoming.tryEmit(message)
     }
 
+    override fun observeMessages(sessionId: String): Flow<ChatMessage> =
+        _incoming.asSharedFlow().filter { it.sessionId == sessionId }
+
     override suspend fun sendMessage(message: ChatMessage): ChatMessage {
-        // TODO: supabaseClient.channel("chat:${message.sessionId}")
-        //   .broadcast(event = "message", ChatMessageDto.fromDomain(message))
+        _outgoing.emit(
+            SyncCommand.ChatMessage(
+                senderId = message.senderId,
+                senderName = message.senderName,
+                message = message.text,
+                timestampMs = message.timestamp
+            )
+        )
         return message
     }
 
@@ -35,15 +59,9 @@ class ChatRepositoryImpl @Inject constructor() : ChatRepository {
         userId: String,
         displayName: String
     ) {
-        // TODO: supabaseClient.channel("chat:$sessionId")
-        //   .broadcast(event = "typing", TypingDto(userId, displayName))
+        // Typing indicators via WebSocket are not implemented yet
     }
 
-    override fun observeTypingIndicator(sessionId: String): Flow<String?> {
-        // TODO: supabaseClient.channel("chat:$sessionId")
-        //   .broadcast(event = "typing")
-        //   .decodeAs<TypingDto>()
-        //   .map { it.displayName }
-        return emptyFlow()
-    }
+    override fun observeTypingIndicator(sessionId: String): Flow<String?> =
+        _incoming.asSharedFlow().map { null }.filter { false }
 }

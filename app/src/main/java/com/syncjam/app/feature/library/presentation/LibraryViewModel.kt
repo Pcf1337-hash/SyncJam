@@ -11,6 +11,7 @@ import com.syncjam.app.db.entity.PlaylistTrackCrossRef
 import com.syncjam.app.feature.library.data.CoverArtDownloader
 import com.syncjam.app.feature.library.data.MediaStoreScanner
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -205,18 +207,27 @@ class LibraryViewModel @Inject constructor(
 
     private fun observePlaylists() {
         viewModelScope.launch {
-            playlistDao.getAllPlaylists().collect { entities ->
-                val playlists = entities.map { playlist ->
-                    PlaylistUi(
-                        id = playlist.id,
-                        name = playlist.name,
-                        description = playlist.description,
-                        trackCount = 0, // Updated separately
-                        createdAt = playlist.createdAt
-                    )
-                }.toImmutableList()
-                _uiState.update { it.copy(playlists = playlists) }
-            }
+            playlistDao.getAllPlaylists()
+                .flatMapLatest { entities ->
+                    if (entities.isEmpty()) {
+                        kotlinx.coroutines.flow.flowOf(persistentListOf<PlaylistUi>())
+                    } else {
+                        // Combine each playlist with its live track count
+                        val countFlows = entities.map { playlist ->
+                            playlistDao.getTrackCountForPlaylist(playlist.id).map { count ->
+                                PlaylistUi(
+                                    id = playlist.id,
+                                    name = playlist.name,
+                                    description = playlist.description,
+                                    trackCount = count,
+                                    createdAt = playlist.createdAt
+                                )
+                            }
+                        }
+                        combine(countFlows) { it.toList().toImmutableList() }
+                    }
+                }
+                .collect { playlists -> _uiState.update { it.copy(playlists = playlists) } }
         }
     }
 

@@ -211,7 +211,7 @@ class YtDlpService(
     }
 
     fun isYouTubeUrl(url: String): Boolean =
-        url.contains("youtube.com") || url.contains("youtu.be")
+        url.contains("youtube.com/") || url.contains("youtu.be/")
 
     fun extractYouTubeId(url: String): String? {
         val patterns = listOf(

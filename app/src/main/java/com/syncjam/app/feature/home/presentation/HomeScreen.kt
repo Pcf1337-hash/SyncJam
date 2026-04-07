@@ -117,6 +117,7 @@ fun HomeScreen(
     onRejoinSession: (code: String, isHost: Boolean) -> Unit = { _, _ -> },
     onJoinPublicSession: (code: String) -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
+    onNavigateToSession: () -> Unit = {},
     isExpandedScreen: Boolean = false,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -230,7 +231,7 @@ fun HomeScreen(
                             playbackProgress = np.progress,
                             onPlayPause = { viewModel.togglePlayPause() },
                             onSkipNext = { viewModel.skipNext() },
-                            onExpand = { /* navigate to full player if in session */ }
+                            onExpand = { onNavigateToSession() }
                         )
                     }
                     NavigationBar {
