@@ -103,6 +103,7 @@ import coil3.compose.AsyncImage
 import com.syncjam.app.core.update.UpdateDialog
 import com.syncjam.app.db.entity.SessionHistoryEntity
 import com.syncjam.app.feature.library.presentation.LibraryScreen
+import com.syncjam.app.feature.player.presentation.MiniPlayerBar
 import com.syncjam.app.feature.profile.ProfileViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -210,7 +211,8 @@ fun HomeScreen(
             Box(modifier = Modifier.weight(1f)) {
                 LibraryScreen(
                     onCreateSession = onCreateSession,
-                    onJoinSession = onJoinSession
+                    onJoinSession = onJoinSession,
+                    onTrackSelected = { track -> viewModel.playTrack(track) }
                 )
             }
         }
@@ -218,31 +220,45 @@ fun HomeScreen(
         // ── Phone tab layout ──────────────────────────────────────────────────
         Scaffold(
             bottomBar = {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        icon = { Icon(if (selectedTab == 0) Icons.Filled.Home else Icons.Outlined.Home, null) },
-                        label = { Text("Home") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1; viewModel.fetchPublicSessions() },
-                        icon = { Icon(if (selectedTab == 1) Icons.Filled.Public else Icons.Outlined.Public, null) },
-                        label = { Text("Sessions") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
-                        icon = { Icon(if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic, null) },
-                        label = { Text("Bibliothek") }
-                    )
-                    NavigationBarItem(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
-                        icon = { Icon(if (selectedTab == 3) Icons.Filled.Person else Icons.Outlined.Person, null) },
-                        label = { Text("Profil") }
-                    )
+                androidx.compose.foundation.layout.Column {
+                    uiState.nowPlaying?.let { np ->
+                        MiniPlayerBar(
+                            trackTitle = np.title,
+                            trackArtist = np.artist,
+                            albumArtUri = np.albumArtUri,
+                            isPlaying = np.isPlaying,
+                            playbackProgress = np.progress,
+                            onPlayPause = { viewModel.togglePlayPause() },
+                            onSkipNext = { viewModel.skipNext() },
+                            onExpand = { /* navigate to full player if in session */ }
+                        )
+                    }
+                    NavigationBar {
+                        NavigationBarItem(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            icon = { Icon(if (selectedTab == 0) Icons.Filled.Home else Icons.Outlined.Home, null) },
+                            label = { Text("Home") }
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1; viewModel.fetchPublicSessions() },
+                            icon = { Icon(if (selectedTab == 1) Icons.Filled.Public else Icons.Outlined.Public, null) },
+                            label = { Text("Sessions") }
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == 2,
+                            onClick = { selectedTab = 2 },
+                            icon = { Icon(if (selectedTab == 2) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic, null) },
+                            label = { Text("Bibliothek") }
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == 3,
+                            onClick = { selectedTab = 3 },
+                            icon = { Icon(if (selectedTab == 3) Icons.Filled.Person else Icons.Outlined.Person, null) },
+                            label = { Text("Profil") }
+                        )
+                    }
                 }
             }
         ) { padding ->
@@ -289,6 +305,7 @@ fun HomeScreen(
                 2 -> LibraryScreen(
                     onCreateSession = onCreateSession,
                     onJoinSession = onJoinSession,
+                    onTrackSelected = { track -> viewModel.playTrack(track) },
                     modifier = Modifier.padding(padding)
                 )
                 3 -> ProfileTab(

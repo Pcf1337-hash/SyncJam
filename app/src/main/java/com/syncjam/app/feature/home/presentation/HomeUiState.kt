@@ -5,6 +5,15 @@ import com.syncjam.app.core.update.AppRelease
 import com.syncjam.app.db.entity.SessionHistoryEntity
 
 @Immutable
+data class NowPlayingUi(
+    val title: String,
+    val artist: String,
+    val albumArtUri: String?,
+    val isPlaying: Boolean,
+    val progress: Float   // 0f..1f
+)
+
+@Immutable
 data class HomeUiState(
     val recentSessions: List<SessionHistoryEntity> = emptyList(),
     val isLoading: Boolean = false,
@@ -12,7 +21,8 @@ data class HomeUiState(
     val lastSessionCode: String? = null,
     val isLastSessionHost: Boolean = false,
     val displayName: String = "",
-    val publicSessions: List<PublicSessionUi> = emptyList()
+    val publicSessions: List<PublicSessionUi> = emptyList(),
+    val nowPlaying: NowPlayingUi? = null
 )
 
 @Immutable

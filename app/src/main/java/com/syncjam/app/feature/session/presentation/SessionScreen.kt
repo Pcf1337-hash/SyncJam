@@ -71,6 +71,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
@@ -155,6 +156,7 @@ fun SessionScreen(
     sessionCode: String = "",
     isHost: Boolean = false,
     displayName: String = "",
+    onBack: () -> Unit,
     onLeave: () -> Unit,
     onOpenPlaylist: () -> Unit,
     viewModel: SessionViewModel = hiltViewModel(),
@@ -395,8 +397,8 @@ fun SessionScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = { viewModel.onEvent(SessionEvent.LeaveSession); onLeave() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Verlassen")
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück")
                         }
                     },
                     actions = {
@@ -415,6 +417,9 @@ fun SessionScreen(
                             }) {
                                 Icon(Icons.Default.Share, "Teilen")
                             }
+                        }
+                        IconButton(onClick = { viewModel.onEvent(SessionEvent.LeaveSession); onLeave() }) {
+                            Icon(Icons.Default.ExitToApp, "Session verlassen")
                         }
                     }
                 )

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.Card
@@ -60,7 +61,8 @@ fun QueueTrackItem(
     modifier: Modifier = Modifier,
     isHost: Boolean = false,
     onMoveUp: (() -> Unit)? = null,
-    onMoveDown: (() -> Unit)? = null
+    onMoveDown: (() -> Unit)? = null,
+    onReplay: (() -> Unit)? = null
 ) {
     val cardColor by animateColorAsState(
         targetValue = if (entry.isCurrent) {
@@ -246,6 +248,18 @@ fun QueueTrackItem(
                         Icons.Default.ThumbDown,
                         contentDescription = "Downvote",
                         tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Replay button (played tracks only)
+            if (onReplay != null) {
+                IconButton(onClick = onReplay, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Replay,
+                        contentDescription = "Nochmal einreihen",
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                 }

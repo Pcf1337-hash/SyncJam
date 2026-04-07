@@ -60,6 +60,7 @@ fun CreateSessionScreen(
         val id = uiState.sessionId
         val code = uiState.sessionCode
         if (id != null && code.isNotEmpty()) {
+            viewModel.clearCreatedSession()
             onSessionCreated(id, code, uiState.pendingDisplayName)
         }
     }

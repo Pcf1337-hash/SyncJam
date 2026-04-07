@@ -135,6 +135,11 @@ class SessionViewModel @Inject constructor(
         positionTickerJob = null
     }
 
+    /** Called after CreateSessionScreen navigated to SessionScreen — prevents LaunchedEffect re-trigger on back nav. */
+    fun clearCreatedSession() {
+        _uiState.update { it.copy(sessionId = null, sessionCode = "") }
+    }
+
     // ── ExoPlayer Control (main thread) ───────────────────────────────────────
 
     /**
@@ -162,8 +167,12 @@ class SessionViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.Main) {
             try {
                 val mediaItem = MediaItem.fromUri(uri)
-                if (exoPlayer.currentMediaItem?.localConfiguration?.uri != uri) {
-                    exoPlayer.setMediaItem(mediaItem)
+                val sameUri = exoPlayer.currentMediaItem?.localConfiguration?.uri == uri
+                val needsPrepare = !sameUri ||
+                    exoPlayer.playbackState == Player.STATE_IDLE ||
+                    exoPlayer.playbackState == Player.STATE_ENDED
+                if (needsPrepare) {
+                    if (!sameUri) exoPlayer.setMediaItem(mediaItem)
                     exoPlayer.prepare()
                 }
                 exoPlayer.seekTo(positionMs)
@@ -526,20 +535,23 @@ class SessionViewModel @Inject constructor(
                 _uiState.update { state ->
                     val approvedIds = command.tracks.map { it.requestId }.toSet()
                     val stillPending = state.ownPendingTrackIds.filter { it !in approvedIds }.toImmutableList()
+                    val newCurrentTrack = command.tracks.getOrNull(currentIdx)?.trackInfo
+                        ?.toUi(Constants.SYNC_SERVER_HTTP_URL)
+                        ?.let { serverTrack ->
+                            // Preserve ExoPlayer-measured durationMs for the same track
+                            val existing = state.currentTrack
+                            if (existing != null && existing.id == serverTrack.id && existing.durationMs > 0)
+                                serverTrack.copy(durationMs = existing.durationMs)
+                            else serverTrack
+                        }
+                        ?: state.currentTrack
                     state.copy(
                         ownPendingTrackIds = stillPending,
                         playlist = command.tracks.mapIndexed { i, q -> q.toUi(i == currentIdx) }.toImmutableList(),
                         currentQueueIndex = currentIdx,
-                        currentTrack = command.tracks.getOrNull(currentIdx)?.trackInfo
-                            ?.toUi(Constants.SYNC_SERVER_HTTP_URL)
-                            ?.let { serverTrack ->
-                                // Preserve ExoPlayer-measured durationMs for the same track
-                                val existing = state.currentTrack
-                                if (existing != null && existing.id == serverTrack.id && existing.durationMs > 0)
-                                    serverTrack.copy(durationMs = existing.durationMs)
-                                else serverTrack
-                            }
-                            ?: state.currentTrack
+                        currentTrack = newCurrentTrack,
+                        // Reset position when a different track becomes current
+                        positionMs = if (newCurrentTrack?.id != state.currentTrack?.id) 0L else state.positionMs
                     )
                 }
                 // Auto-play first track: only host triggers play so all others receive a Play command

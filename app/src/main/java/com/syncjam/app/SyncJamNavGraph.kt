@@ -97,6 +97,7 @@ fun SyncJamNavGraph(
                     sessionCode = route.sessionCode,
                     isHost = route.isHost,
                     displayName = route.displayName,
+                    onBack = { navController.popBackStack() },
                     onLeave = {
                         navController.navigate(Route.Home) {
                             popUpTo(Route.Home) { inclusive = false }
@@ -114,6 +115,13 @@ fun SyncJamNavGraph(
                     onBack = { navController.popBackStack() },
                     sessionEntry = sessionEntry
                 )
+            }
+
+            composable<Route.Profile> {
+                // Profile is a tab inside HomeScreen — navigate back to Home
+                navController.navigate(Route.Home) {
+                    popUpTo(Route.Home) { inclusive = false }
+                }
             }
         }
     }

@@ -1,7 +1,13 @@
 package com.syncjam.app.feature.home.presentation
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import com.syncjam.app.feature.library.presentation.TrackUi
 import com.syncjam.app.core.auth.SessionPrefs
 import com.syncjam.app.core.common.Constants
 import com.syncjam.app.core.update.checkForUpdate
@@ -43,13 +49,15 @@ private data class RenameRequest(val sessionName: String, val hostId: String)
 class HomeViewModel @Inject constructor(
     private val sessionHistoryDao: SessionHistoryDao,
     private val httpClient: HttpClient,
-    private val sessionPrefs: SessionPrefs
+    private val sessionPrefs: SessionPrefs,
+    private val player: ExoPlayer
 ) : ViewModel() {
 
     private val _updateRelease = MutableStateFlow<com.syncjam.app.core.update.AppRelease?>(null)
     private val _publicSessions = MutableStateFlow<List<PublicSessionUi>>(emptyList())
     private val _detectedClipboardCode = MutableStateFlow<String?>(null)
     val detectedClipboardCode = _detectedClipboardCode.asStateFlow()
+    private val _nowPlaying = MutableStateFlow<NowPlayingUi?>(null)
     private val _extraState = MutableStateFlow(
         Triple(
             sessionPrefs.getLastSessionCode(),
@@ -62,8 +70,9 @@ class HomeViewModel @Inject constructor(
         sessionHistoryDao.getRecentSessions(),
         _updateRelease,
         _extraState,
-        _publicSessions
-    ) { sessions, update, (lastCode, isHost, name), publicSessions ->
+        _publicSessions,
+        _nowPlaying
+    ) { sessions, update, (lastCode, isHost, name), publicSessions, nowPlaying ->
         // Eigene Session-Codes aus History ermitteln (isHost = true)
         val ownCodes = sessions.filter { it.isHost }.map { it.sessionCode }.toSet()
         HomeUiState(
@@ -74,7 +83,8 @@ class HomeViewModel @Inject constructor(
             displayName = name,
             publicSessions = publicSessions.map { s ->
                 s.copy(isOwnSession = s.sessionCode in ownCodes)
-            }
+            },
+            nowPlaying = nowPlaying
         )
     }.stateIn(
         scope = viewModelScope,
@@ -82,9 +92,43 @@ class HomeViewModel @Inject constructor(
         initialValue = HomeUiState()
     )
 
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) = updateNowPlaying()
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = updateNowPlaying()
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+                _nowPlaying.value = null
+            }
+        }
+    }
+
+    private fun updateNowPlaying() {
+        val meta = player.mediaMetadata
+        val title = meta.title?.toString()
+        if (title.isNullOrBlank() || player.playbackState == Player.STATE_IDLE) {
+            _nowPlaying.value = null
+            return
+        }
+        val duration = player.duration.takeIf { it > 0L } ?: 1L
+        _nowPlaying.value = NowPlayingUi(
+            title = title,
+            artist = meta.artist?.toString() ?: "",
+            albumArtUri = meta.artworkUri?.toString(),
+            isPlaying = player.isPlaying,
+            progress = (player.currentPosition.toFloat() / duration).coerceIn(0f, 1f)
+        )
+    }
+
     init {
+        player.addListener(playerListener)
+        updateNowPlaying()
         checkForUpdates()
         fetchPublicSessions()
+    }
+
+    override fun onCleared() {
+        player.removeListener(playerListener)
+        super.onCleared()
     }
 
     private fun checkForUpdates() {
@@ -171,5 +215,31 @@ class HomeViewModel @Inject constructor(
     /** Dismiss the clipboard paste dialog without joining. */
     fun dismissClipboardDialog() {
         _detectedClipboardCode.update { null }
+    }
+
+    fun togglePlayPause() {
+        if (player.isPlaying) player.pause() else player.play()
+        updateNowPlaying()
+    }
+
+    fun skipNext() {
+        if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+    }
+
+    fun playTrack(track: TrackUi) {
+        val mediaItem = MediaItem.Builder()
+            .setUri(Uri.parse(track.contentUri))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(track.title)
+                    .setArtist(track.artist)
+                    .setAlbumTitle(track.album)
+                    .setArtworkUri(track.albumArtUri?.let { Uri.parse(it) })
+                    .build()
+            )
+            .build()
+        player.setMediaItem(mediaItem)
+        player.prepare()
+        player.play()
     }
 }

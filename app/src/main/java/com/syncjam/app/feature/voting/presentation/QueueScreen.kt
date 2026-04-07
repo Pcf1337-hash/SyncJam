@@ -389,6 +389,20 @@ fun QueueScreen(
                             onUpvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, 1)) },
                             onDownvote = { viewModel.onEvent(SessionEvent.Vote(track.requestId, -1)) },
                             onRemove = { viewModel.onEvent(SessionEvent.RemoveFromQueue(track.requestId)) },
+                            onReplay = {
+                                if (track.source == com.syncjam.app.feature.session.presentation.TrackSourceUi.YOUTUBE && track.youtubeId != null) {
+                                    viewModel.onEvent(SessionEvent.AddYouTubeTrack("https://www.youtube.com/watch?v=${track.youtubeId}"))
+                                } else {
+                                    viewModel.onEvent(SessionEvent.AddLocalTrackToQueue(
+                                        trackId = track.trackId,
+                                        title = track.title,
+                                        artist = track.artist,
+                                        durationMs = track.durationMs,
+                                        contentUri = track.streamUrl ?: "content://media/external/audio/media/${track.trackId}",
+                                        albumArtUri = track.thumbnailUrl
+                                    ))
+                                }
+                            },
                             modifier = Modifier.animateItem()
                         )
                     }
