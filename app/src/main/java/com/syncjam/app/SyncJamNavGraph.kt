@@ -1,12 +1,16 @@
 package com.syncjam.app
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.syncjam.app.core.ui.theme.SyncJamTheme
+import com.syncjam.app.feature.settings.presentation.SettingsViewModel
 import com.syncjam.app.feature.auth.presentation.LoginScreen
 import com.syncjam.app.feature.home.presentation.HomeScreen
 import com.syncjam.app.feature.onboarding.OnboardingScreen
@@ -34,7 +38,9 @@ fun SyncJamNavGraph(
     startDestination: Route = Route.Login,
     isExpandedScreen: Boolean = false
 ) {
-    SyncJamTheme {
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val settingsState by settingsViewModel.uiState.collectAsStateWithLifecycle()
+    SyncJamTheme(themeMode = settingsState.themeMode) {
         val navController = rememberNavController()
         NavHost(navController = navController, startDestination = startDestination) {
 
