@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.syncjam.app.core.common.Constants
@@ -184,7 +185,16 @@ class SessionViewModel @Inject constructor(
         }
         viewModelScope.launch(Dispatchers.Main) {
             try {
-                val mediaItem = MediaItem.fromUri(uri)
+                val mediaItem = MediaItem.Builder()
+                    .setUri(uri)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(track.title)
+                            .setArtist(track.artist)
+                            .setArtworkUri(track.albumArtUri?.let { Uri.parse(it) })
+                            .build()
+                    )
+                    .build()
                 val sameUri = exoPlayer.currentMediaItem?.localConfiguration?.uri == uri
                 val needsPrepare = !sameUri ||
                     exoPlayer.playbackState == Player.STATE_IDLE ||
