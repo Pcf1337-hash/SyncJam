@@ -2,7 +2,6 @@ package com.syncjam.app.feature.session.presentation
 
 import android.content.Context
 import android.content.ContentUris
-import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
@@ -196,10 +195,6 @@ class SessionViewModel @Inject constructor(
                 }
                 exoPlayer.seekTo(positionMs)
                 exoPlayer.play()
-                // Start PlaybackService so the media notification appears in the shade
-                context.startForegroundService(
-                    Intent(context, com.syncjam.app.feature.player.data.PlaybackService::class.java)
-                )
             } catch (e: Exception) {
                 Log.w(TAG, "ExoPlayer load failed for $uri: ${e.message}")
             }
