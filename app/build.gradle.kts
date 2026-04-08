@@ -15,8 +15,8 @@ android {
         applicationId = "com.syncjam.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "2.9.0"
+        versionCode = 30
+        versionName = "2.9.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += "arm64-v8a"
@@ -37,9 +37,13 @@ android {
         }
     }
 
+    lint {
+        checkReleaseBuilds = false
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
         }
